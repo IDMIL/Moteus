@@ -26,7 +26,7 @@ can be run like:
 ```
 python3 -m moteus_gui.tview --devices=1
 ```
-_note: If an error of type "This application failed to start because no Qt platform plugin could be initialized..." appears, you may need_ `sudo apt install qt5-gtk2-platformtheme`.
+_note: If an error of type "This application failed to start because no Qt platform plugin could be initialized..." appears, you may need to do_ `sudo apt install qt5-gtk2-platformtheme`_, and then retry._
 
 (Your pip may have installed a `tview` script into your path which you
 could also use).

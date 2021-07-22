@@ -1123,6 +1123,13 @@ After calibrating for an entirely new type of motor, you may need to
 adjust PID gains before the motor will perform acceptably, and/or
 configure `motor.unwrapped_position_scale`.
 
+## Setting the "zero offset" ##
+
+The moteus controller can locate positions within one revolution after being power cycled, and will start with the reported position being between -0.5 and 0.5.  The physical zero position can be set using the following command:
+
+```
+python3 -m moteus.moteus_tool --target 1 --zero-offset
+```
 
 ## Flashing and building firmware ##
 
@@ -1152,7 +1159,7 @@ tools/bazel build --config=target //fw:flash
 Or, if already built, flashed using:
 
 ```
-./fw/flash.sh
+./fw/flash.py
 ```
 
 ### openocd ###
@@ -1343,4 +1350,4 @@ The maximum mechanical velocity which can be commanded is 28000 rpm,
 or ~467 revolutions per second before any reducers.  Note, most motors
 will be incapable of this speed either mechanically or electrically.
 
-The maximum electrical frequency is 5kHz.
+The maximum electrical frequency is 4kHz.

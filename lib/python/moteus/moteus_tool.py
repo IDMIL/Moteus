@@ -490,6 +490,7 @@ class Stream:
                 continue
             new_config.append(b'conf set ' + line + b'\n')
         await self.write_config_stream(io.BytesIO(b''.join(new_config)))
+        await self.command("conf write")
 
     async def do_calibrate(self):
         print("This will move the motor, ensure it can spin freely!")
@@ -497,6 +498,10 @@ class Stream:
 
         unwrapped_position_scale = \
             await self.read_config_double("motor.unwrapped_position_scale")
+
+        # The rest of the calibration procedure assumes that
+        # phase_invert is 0.
+        await self.command("conf set motor.phase_invert 0")
 
         # We have 3 things to calibrate.
         #  1) The encoder to phase mapping

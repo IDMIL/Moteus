@@ -1,6 +1,6 @@
-# -*- python -*-
+#!/usr/bin/python3
 
-# Copyright 2020 Josh Pieper, jjp@pobox.com.
+# Copyright 2021 Josh Pieper, jjp@pobox.com.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,4 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-VERSION = "0.3.26"
+'''Capture data from a fdcanusb to a file'''
+
+import sys
+import time
+
+fd = open(sys.argv[1])
+out = open(sys.argv[2])
+while True:
+    line = fd.readline()
+    print(f'{time.time()} {line}', file=out)

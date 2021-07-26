@@ -30,14 +30,14 @@ load("@com_github_mjbots_mjlib//tools/workspace:default.bzl",
 mjlib_add()
 
 # Now bazel-toolchain
-load("@com_github_mjbots_bazel_toolchain//toolchain:deps.bzl", "bazel_toolchain_dependencies")
+load("@com_grail_bazel_toolchain//toolchain:deps.bzl", "bazel_toolchain_dependencies")
 bazel_toolchain_dependencies()
 
-load("@com_github_mjbots_bazel_toolchain//toolchain:rules.bzl", "llvm_toolchain")
+load("@com_grail_bazel_toolchain//toolchain:rules.bzl", "llvm_toolchain")
 llvm_toolchain(
     name = "llvm_toolchain",
     llvm_version = "10.0.0",
-    urls = {
+        urls = {
         "windows" : ["https://github.com/mjbots/bazel-toolchain/releases/download/0.5.6-mj20201011/LLVM-10.0.0-win64.tar.xz"],
     },
     sha256 = {

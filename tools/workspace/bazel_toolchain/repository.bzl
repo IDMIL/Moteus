@@ -18,7 +18,7 @@ load("//tools/workspace:github_archive.bzl", "github_archive")
 
 def bazel_toolchain_repository():
     github_archive(
-        name = "com_github_mjbots_bazel_toolchain",
+        name = "com_grail_bazel_toolchain",
         repo = "mjbots/bazel-toolchain",
         commit = "9b0bae6a79392920698b9778e334ce2354b425a5",
         sha256 = "36420a9fc39fb9462f06c0da386bb987a191cc0e388909fe4873e2a3c758c2be",

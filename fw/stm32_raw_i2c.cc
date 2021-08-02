@@ -14,8 +14,8 @@
 
 #include "fw/stm32_raw_i2c.h"
 
-#include "stm32f4xx.h"
-#include "stm32f4xx_hal_rcc.h"
+#include "stm32g4xx.h"
+#include "stm32g4xx_hal_rcc.h"
 
 #include "mjlib/base/assert.h"
 

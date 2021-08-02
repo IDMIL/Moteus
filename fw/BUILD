@@ -104,6 +104,7 @@ MOTEUS_SOURCES = [
     "millisecond_timer.h",
     "motor_driver.h",
     "stm32_i2c.h",
+    "gpio_pin.h",
     "async_i2c.h",
     "stm32_hal_i2c.h",
     "stm32_hal_i2c.cc",

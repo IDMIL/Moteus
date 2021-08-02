@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "stm32f4xx_hal.h"
+#include "stm32g4xx_hal.h"
 
 #include "fw/async_i2c.h"
 

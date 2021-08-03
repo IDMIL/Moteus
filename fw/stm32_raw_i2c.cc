@@ -23,7 +23,7 @@
 
 // TODO jpieper: Use DMA for the bulk transfers to reduce overhead.
 
-namespace fw {
+namespace moteus {
 
 namespace {
 typedef Stm32RawI2C::Parameters Parameters;
@@ -281,7 +281,7 @@ class Stm32RawI2C::Impl {
         auto callback = context_.callback;
         auto error_result = context_.error_result;
         context_ = Context();
-        callback({error_result, gimbal_error_category()});
+        callback({error_result, moteus_error_category()});
         return;
       }
     }
@@ -303,7 +303,7 @@ class Stm32RawI2C::Impl {
           auto callback = context_.callback;
           auto error_result = context_.error_result;
           context_ = Context();
-          callback({error_result, gimbal_error_category()});
+          callback({error_result, moteus_error_category()});
           return;
         }
         break;

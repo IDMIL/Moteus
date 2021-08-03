@@ -18,7 +18,7 @@
 #include "mjlib/micro/async_types.h"
 // #include "mjlib/micro/static_function.h"
 
-namespace fw {
+namespace moteus {
 
 class AsyncI2C {
  public:

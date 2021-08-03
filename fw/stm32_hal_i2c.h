@@ -18,7 +18,7 @@
 
 #include "fw/async_i2c.h"
 
-namespace fw {
+namespace moteus {
 
 class Stm32HalI2C : public AsyncI2C {
  public:

@@ -20,7 +20,7 @@
 #include "fw/gpio_pin.h"
 #include "fw/millisecond_timer.h"
 
-namespace fw {
+namespace moteus {
 
 class Stm32RawI2C : public AsyncI2C {
  public:

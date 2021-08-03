@@ -44,6 +44,7 @@ enum class errc {
   kUnderVoltage = 40,
 };
 
+const mjlib::micro::error_category& moteus_error_category();
 mjlib::micro::error_code make_error_code(errc);
 }
 

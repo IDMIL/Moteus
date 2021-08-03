@@ -21,7 +21,7 @@
 namespace {
 struct Registry {
   I2C_HandleTypeDef* hi2c = nullptr;
-  fw::Stm32HalI2C* stm32 = nullptr;
+  moteus::Stm32HalI2C* stm32 = nullptr;
 };
 
 Registry g_registry[3] = {};
@@ -57,7 +57,7 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
 }
 }
 
-namespace fw {
+namespace moteus {
 
 Stm32HalI2C::Stm32HalI2C(I2C_HandleTypeDef* hi2c) : hi2c_(hi2c) {
   for (auto& item: g_registry) {
@@ -85,8 +85,8 @@ void Stm32HalI2C::AsyncRead(uint8_t device_address,
                             uint8_t memory_address,
                             mjlib::base::string_span buffer,
                             mjlib::micro::ErrorCallback callback) {
-  MJ_ASSERT(!read_callback_.valid());
-  MJ_ASSERT(!write_callback_.valid());
+  MJ_ASSERT(!read_callback_);
+  MJ_ASSERT(!write_callback_);
 
   read_callback_ = callback;
 
@@ -96,7 +96,7 @@ void Stm32HalI2C::AsyncRead(uint8_t device_address,
 
   if (i2c_status != 0) {
     read_callback_ = {};
-    callback({i2c_status, gimbal_error_category()});
+    callback({i2c_status, moteus_error_category()});
   }
 }
 
@@ -104,8 +104,8 @@ void Stm32HalI2C::AsyncWrite(uint8_t device_address,
                              uint8_t memory_address,
                              const std::string_view& buffer,
                              mjlib::micro::ErrorCallback callback) {
-  MJ_ASSERT(!read_callback_.valid());
-  MJ_ASSERT(!write_callback_.valid());
+  MJ_ASSERT(!read_callback_);
+  MJ_ASSERT(!write_callback_);
 
   write_callback_ = callback;
 
@@ -116,14 +116,14 @@ void Stm32HalI2C::AsyncWrite(uint8_t device_address,
 
   if (i2c_status != 0) {
     write_callback_ = {};
-    callback({i2c_status, gimbal_error_category()});
+    callback({i2c_status, moteus_error_category()});
   }
 }
 
 void Stm32HalI2C::Poll() {
   if (tx_complete_) {
     tx_complete_ = false;
-    if (!write_callback_.valid()) { return; }
+    if (!write_callback_) { return; }
 
     auto callback = write_callback_;
     write_callback_ = {};
@@ -131,7 +131,7 @@ void Stm32HalI2C::Poll() {
   }
   if (rx_complete_) {
     rx_complete_ = false;
-    if (!read_callback_.valid()) { return; }
+    if (!read_callback_) { return; }
 
     auto callback = read_callback_;
     read_callback_ = {};
@@ -148,21 +148,21 @@ void Stm32HalI2C::TransmitComplete() {
 }
 
 void Stm32HalI2C::Error() {
-  if (!write_callback_.valid() &&
-      !read_callback_.valid()) { return; }
+  if (!write_callback_ &&
+      !read_callback_) { return; }
 
-  MJ_ASSERT(write_callback_.valid() ^ read_callback_.valid());
+  MJ_ASSERT(!!write_callback_ ^ !!read_callback_);
 
-  if (write_callback_.valid()) {
+  if (!!write_callback_) {
     auto callback = write_callback_;
     write_callback_ = {};
     callback({static_cast<int>(0x1000 | hi2c_->ErrorCode),
-            gimbal_error_category()});
-  } else if (read_callback_.valid()) {
+            moteus_error_category()});
+  } else if (!!read_callback_) {
     auto callback = read_callback_;
     read_callback_ = {};
     callback({static_cast<int>(0x1000 | hi2c_->ErrorCode),
-            gimbal_error_category()});
+            moteus_error_category()});
   }
 }
 

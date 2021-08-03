@@ -14,7 +14,7 @@
 
 #pragma once
 
-namespace fw {
+namespace moteus {
 
 class GpioPin {
  public:

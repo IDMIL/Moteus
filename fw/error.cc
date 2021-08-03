@@ -42,12 +42,13 @@ struct MoteusErrorCategory : mjlib::micro::error_category {
     return "unknown";
   }
 };
+}
 
 const mjlib::micro::error_category& moteus_error_category() {
   static MoteusErrorCategory result;
   return result;
 }
-}
+
 
 mjlib::micro::error_code make_error_code(errc err) {
   return mjlib::micro::error_code(

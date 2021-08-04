@@ -45,6 +45,8 @@
 #error "Unknown target"
 #endif
 
+#include "i2c.h"
+
 extern "C" {
   uint32_t kMoteusFirmwareVersion = MOTEUS_FIRMWARE_VERSION;
 }
@@ -276,6 +278,9 @@ int main(void) {
                              kMoteusFirmwareVersion, MOTEUS_MODEL_NUMBER);
   Uuid uuid(persistent_config);
   ClockManager clock(&timer, persistent_config, command_manager);
+
+  // HAL_Init(); // crashes moteus init
+  MX_I2C1_Init();
 
   AbsPort abs_port(
       &pool, &persistent_config, &telemetry_manager, &timer,

@@ -29,6 +29,8 @@
 #include "fw/drv8323.h"
 #include "fw/moteus_hw.h"
 
+#include "i2c.h"
+
 namespace base = mjlib::base;
 namespace micro = mjlib::micro;
 namespace multiplex = mjlib::multiplex;
@@ -244,6 +246,104 @@ class BoardDebug::Impl {
 
       bldc_->Command(command);
       WriteOk(response);
+      return;
+    }
+
+    if (cmd_text == "i2c.state") {
+      std::string message;
+      HAL_I2C_StateTypeDef state = HAL_I2C_GetState(&hi2c1);
+      message = "i2c state: ";
+      switch(state) {
+        case HAL_I2C_STATE_RESET:
+        {
+          message += "RESET";
+          break;
+        }
+        case HAL_I2C_STATE_READY:
+        {
+          message += "READY";
+          break;
+        }
+        case HAL_I2C_STATE_BUSY:
+        {
+          message += "BUSY";
+          break;
+        }
+        case HAL_I2C_STATE_BUSY_TX:
+        {
+          message += "BUSY_TX";
+          break;
+        }
+        case HAL_I2C_STATE_BUSY_RX:
+        {
+          message += "BUSY_RX";
+          break;
+        }
+        case HAL_I2C_STATE_LISTEN:
+        {
+          message += "LISTEN";
+          break;
+        }
+        case HAL_I2C_STATE_BUSY_TX_LISTEN:
+        {
+          message += "BUSY_TX_LISTEN";
+          break;
+        }
+        case HAL_I2C_STATE_BUSY_RX_LISTEN:
+        {
+          message += "BUSY_RX_LISTEN";
+          break;
+        }
+        case HAL_I2C_STATE_TIMEOUT:
+        {
+          message += "TIMEOUT";
+          break;
+        }
+        case HAL_I2C_STATE_ABORT:
+        {
+          message += "ABORT";
+          break;
+        }
+        case HAL_I2C_STATE_ERROR:
+        {
+          message += "ERROR";
+          break;
+        }
+      }
+      message += "\r\n";
+      WriteMessage(response,message);
+
+      return;
+    }
+    if (cmd_text == "i2c.status") {
+      std::string message;
+      HAL_StatusTypeDef status = HAL_I2C_IsDeviceReady(&hi2c1, 8, 64, 100);
+      message = "i2c status: ";
+      switch(status) {
+        case HAL_OK:
+        {
+          message += "OK";
+          break;
+        }
+        case HAL_TIMEOUT:
+        {
+          message += "TIMEOUT";
+          break;
+        }
+        case HAL_BUSY:
+        {
+          message += "BUSY";
+          break;
+        }
+        case HAL_ERROR:
+        {
+          message += "ERROR";
+          break;
+        }
+      }
+      message += "\r\n";
+      WriteMessage(response,message);
+
       return;
     }
 

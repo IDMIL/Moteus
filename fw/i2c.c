@@ -117,7 +117,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
     */
     /* TODO jpieper: On the actual gimbal board, this will be pins 6
      * and 7. However, on the discovery board, it is pins 6 and 9. */
-    GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_9;
+    GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;

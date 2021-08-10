@@ -47,14 +47,14 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
   }
 }
 
-void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
-  for (auto& item: g_registry) {
-    if (item.hi2c == hi2c) {
-      item.stm32->Error();
-      return;
-    }
-  }
-}
+// void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
+//   for (auto& item: g_registry) {
+//     if (item.hi2c == hi2c) {
+//       item.stm32->Error();
+//       return;
+//     }
+//   }
+// }
 }
 
 namespace moteus {

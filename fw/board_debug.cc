@@ -30,7 +30,7 @@
 #include "fw/drv8323.h"
 #include "fw/moteus_hw.h"
 
-
+#include "i2c-api.h"
 
 namespace base = mjlib::base;
 namespace micro = mjlib::micro;
@@ -242,9 +242,69 @@ class BoardDebug::Impl {
       return;
     }
 
+    if (cmd_text == "i2c.addr") {
+      std::string message;
+      message = "i2c addr: ";
+      message += std::to_string(i2cAddrMatchCode);
+      message += " vs ";
+      message += std::to_string(8 << 1);
+      message += "\r\n";
+      WriteMessage(response,message);
+
+      return;
+    }
+
+    if (cmd_text == "i2c.clbk") {
+      std::string message;
+      message = "i2c clbk:";
+      message += " AddrCallback ";
+      message += std::to_string(i2cAddrCallback);
+      message += " ListenCpltCallback ";
+      message += std::to_string(i2cListenCpltCallback);
+      message += " SlaveRxCpltCallback ";
+      message += std::to_string(i2cSlaveRxCpltCallback);
+      message += " SlaveTxCpltCallback ";
+      message += std::to_string(i2cSlaveTxCpltCallback);
+      message += "\r\n";
+      WriteMessage(response,message);
+
+      return;
+    }
+
+    if (cmd_text == "i2c.init") {
+      std::string message;
+      message = "i2c status: ";
+      switch(i2cInit) {
+        case HAL_OK:
+        {
+          message += "OK";
+          break;
+        }
+        case HAL_TIMEOUT:
+        {
+          message += "TIMEOUT";
+          break;
+        }
+        case HAL_BUSY:
+        {
+          message += "BUSY";
+          break;
+        }
+        case HAL_ERROR:
+        {
+          message += "ERROR";
+          break;
+        }
+      }
+      message += "\r\n";
+      WriteMessage(response,message);
+
+      return;
+    }
+
     if (cmd_text == "i2c.state") {
       std::string message;
-       HAL_I2C_StateTypeDef state = HAL_I2C_STATE_ERROR;
+      HAL_I2C_StateTypeDef state = HAL_I2C_GetState(&mbed_i2c_.i2c.handle);
       message = "i2c state: ";
       switch(state) {
         case HAL_I2C_STATE_RESET:
@@ -308,9 +368,10 @@ class BoardDebug::Impl {
 
       return;
     }
+
     if (cmd_text == "i2c.status") {
       std::string message;
-      HAL_StatusTypeDef status = HAL_ERROR;
+      HAL_StatusTypeDef status = HAL_I2C_IsDeviceReady(&mbed_i2c_.i2c.handle, 8 << 1, 1, 100);
       message = "i2c status: ";
       switch(status) {
         case HAL_OK:
@@ -334,6 +395,76 @@ class BoardDebug::Impl {
           break;
         }
       }
+      message += "\r\n";
+      WriteMessage(response,message);
+
+      return;
+    }
+
+    if (cmd_text == "i2c.error") {
+      std::string message;
+      uint32_t error = HAL_I2C_GetError(&mbed_i2c_.i2c.handle);
+      message = "i2c error: ";
+      switch(error) {
+        case HAL_I2C_ERROR_NONE:
+        {
+          message += "NONE";
+          break;
+        }
+        case HAL_I2C_ERROR_BERR:
+        {
+          message += "BERR";
+          break;
+        }
+        case HAL_I2C_ERROR_ARLO:
+        {
+          message += "ARLO";
+          break;
+        }
+        case HAL_I2C_ERROR_AF:
+        {
+          message += "AF";
+          break;
+        }
+        case HAL_I2C_ERROR_OVR:
+        {
+          message += "OVR";
+          break;
+        }
+        case HAL_I2C_ERROR_DMA:
+        {
+          message += "DMA";
+          break;
+        }
+        case HAL_I2C_ERROR_TIMEOUT:
+        {
+          message += "TIMEOUT";
+          break;
+        }
+        case HAL_I2C_ERROR_SIZE:
+        {
+          message += "SIZE";
+          break;
+        }
+        case HAL_I2C_ERROR_DMA_PARAM:
+        {
+          message += "DMA_PARAM";
+          break;
+        }
+        #if (USE_HAL_I2C_REGISTER_CALLBACKS == 1)
+        case HAL_I2C_ERROR_INVALID_CALLBACK:
+        {
+          message += "INVALID_CALLBACK";
+          break;
+        }
+        #endif
+        case HAL_I2C_ERROR_INVALID_PARAM:
+        {
+          message += "INVALID_PARAM";
+          break;
+        }
+      }
+      message += " " + i2cErrorMessage;
       message += "\r\n";
       WriteMessage(response,message);
 

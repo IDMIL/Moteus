@@ -98,6 +98,8 @@ MOTEUS_SOURCES = [
     "simple_pi.h",
     "stm32_i2c.h",
     "gpio_pin.h",
+    "i2c-api.h",
+    "i2c-api.c",
     "async_i2c.h",
     "stm32_spi.h",
     "stm32_serial.h",

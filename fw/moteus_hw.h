@@ -23,6 +23,8 @@ using namespace std;
 #endif
 
 #include <string>
+extern std::string i2cErrorMessage;
+
 namespace moteus {
 
 // r1 silk

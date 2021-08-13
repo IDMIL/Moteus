@@ -45,7 +45,7 @@
 #error "Unknown target"
 #endif
 
-
+#include "i2c-api.h"
 
 extern "C" {
   uint32_t kMoteusFirmwareVersion = MOTEUS_FIRMWARE_VERSION;
@@ -174,6 +174,7 @@ volatile uint8_t g_measured_hw_pins;
 volatile uint8_t g_measured_hw_rev;
 }
 
+<<<<<<< HEAD
 namespace {
 struct CanConfig {
   uint32_t prefix = 0;
@@ -188,6 +189,13 @@ struct CanConfig {
   }
 };
 }
+=======
+// TorqueTuner
+
+#define DEVICE_I2CSLAVE 1
+i2c_t mbed_i2c_;
+std::string i2cErrorMessage;
+>>>>>>> Fork i2c_api from https://github.com/ARMmbed/mbed-os into i2c-api
 
 int main(void) {
 #if defined(TARGET_STM32G4)
@@ -299,7 +307,13 @@ int main(void) {
   Uuid uuid(persistent_config);
   ClockManager clock(&timer, persistent_config, command_manager);
 
+  // TorqueTuner
 
+  i2c_init(&mbed_i2c_, MOTEUS_ABS_SDA, MOTEUS_ABS_SCL);
+  i2c_slave_mode(&mbed_i2c_, 1);
+  i2c_slave_address(&mbed_i2c_, 0, 8 << 1, 0);
+
+  // moteus
 
   AbsPort abs_port(
       &pool, &persistent_config, &telemetry_manager, &timer,

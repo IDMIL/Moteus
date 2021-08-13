@@ -14,7 +14,8 @@
 
 #pragma once
 
-#include "mbed.h"
+// #include "mbed.h"
+#include "platform/mbed_interface.h"
 
 #include "mjlib/micro/flash.h"
 

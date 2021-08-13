@@ -20,6 +20,8 @@
 #include "fw/error.h"
 #include "fw/stm32_serial.h"
 
+using namespace::std; // string_view
+
 namespace base = mjlib::base;
 namespace micro = mjlib::micro;
 

@@ -14,9 +14,12 @@
 
 #pragma once
 
-#include <optional>
-
-#include "mbed.h"
+// #include "mbed.h"
+#include "drivers/DigitalOut.h"
+#ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
+using namespace mbed;
+using namespace std;
+#endif
 
 #include "hal/spi_api.h"
 

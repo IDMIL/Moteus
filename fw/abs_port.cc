@@ -14,7 +14,7 @@
 
 #include "fw/abs_port.h"
 
-#include "fw/stm32_i2c.h"
+// #include "fw/stm32_i2c.h"
 
 namespace micro = mjlib::micro;
 
@@ -71,62 +71,63 @@ class AbsPort::Impl {
   }
 
   void Poll() {
-    if (i2c_) {
-      i2c_->Poll();
-      const auto read_status = i2c_->CheckRead();
+    // if (i2c_) {
+      // i2c_->Poll();
+      // const auto read_status = i2c_->CheckRead();
 
-      if (read_status == Stm32I2c::ReadStatus::kComplete) {
-        // We got new data, publish it.
-        status_.encoder_raw =
-            (encoder_raw_data_[4] << 8) |
-            (encoder_raw_data_[5]);
-        status_.encoder_valid = true;
+      // if (read_status == Stm32I2c::ReadStatus::kComplete) {
+      //   // We got new data, publish it.
+      //   status_.encoder_raw =
+      //       (encoder_raw_data_[4] << 8) |
+      //       (encoder_raw_data_[5]);
+      //   status_.encoder_valid = true;
 
-        status_.as5048_agc = encoder_raw_data_[0];
-        status_.as5048_diag = encoder_raw_data_[1];
-        status_.as5048_mag =
-            (encoder_raw_data_[2] << 8) |
-            (encoder_raw_data_[3]);
+      //   status_.as5048_agc = encoder_raw_data_[0];
+      //   status_.as5048_diag = encoder_raw_data_[1];
+      //   status_.as5048_mag =
+      //       (encoder_raw_data_[2] << 8) |
+      //       (encoder_raw_data_[3]);
 
-        status_.position =
-            static_cast<float>(
-                static_cast<int16_t>(
-                    status_.encoder_raw +
-                    config_.position_offset)) /
-            65536.0f *
-            config_.position_scale;
-      } else if (read_status == Stm32I2c::ReadStatus::kError) {
-        status_.as5048_error_count++;
-      }
-    }
+      //   status_.position =
+      //       static_cast<float>(
+      //           static_cast<int16_t>(
+      //               status_.encoder_raw +
+      //               config_.position_offset)) /
+      //       65536.0f *
+      //       config_.position_scale;
+      // } else if (read_status == Stm32I2c::ReadStatus::kError) {
+      //   status_.as5048_error_count++;
+      // }
+    // }
   }
 
   void StartAs5048Read() {
-    MJ_ASSERT(!!i2c_);
-    i2c_->StartReadMemory(
-        config_.encoder_i2c_address,
-        AS5048_REG_AGC,
-        mjlib::base::string_span(
-            reinterpret_cast<char*>(&encoder_raw_data_[0]),
-            sizeof(encoder_raw_data_)));
+    // MJ_ASSERT(!!i2c_);
+    // i2c_->StartReadMemory(
+    //     config_.encoder_i2c_address,
+    //     AS5048_REG_AGC,
+    //     mjlib::base::string_span(
+    //         reinterpret_cast<char*>(&encoder_raw_data_[0]),
+    //         sizeof(encoder_raw_data_)));
   }
 
   void HandleConfigUpdate() {
     switch (config_.mode) {
       case kDisabled: {
-        i2c_.reset();
+        // i2c_.reset();
         break;
       }
       case kAs5048: {
-        i2c_.emplace(
-            [&]() {
-              Stm32I2c::Options options;
-              options.sda = options_.sda;
-              options.scl = options_.scl;
-              options.frequency = config_.i2c_hz;
-              options.i2c_mode = static_cast<I2cMode>(config_.i2c_mode);
-              return options;
-            }());
+        // i2c_.emplace(
+        //     [&]() {
+        //       Stm32I2c::Options options;
+        //       options.sda = options_.sda;
+        //       options.scl = options_.scl;
+        //       options.frequency = config_.i2c_hz;
+        //       options.i2c_mode = static_cast<I2cMode>(config_.i2c_mode);
+        //       return options;
+        //     }());
+        
         break;
       }
       case kNumModes: {
@@ -141,7 +142,7 @@ class AbsPort::Impl {
   MillisecondTimer* const timer_;
   const Options options_;
 
-  std::optional<Stm32I2c> i2c_;
+  // std::optional<Stm32I2c> i2c_;
   int32_t encoder_count_ = 0;
   uint8_t encoder_raw_data_[6] = {};
 };

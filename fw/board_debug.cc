@@ -29,7 +29,7 @@
 #include "fw/drv8323.h"
 #include "fw/moteus_hw.h"
 
-#include "i2c.h"
+
 
 namespace base = mjlib::base;
 namespace micro = mjlib::micro;

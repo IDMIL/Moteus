@@ -14,7 +14,7 @@
 
 #include "fw/abs_port.h"
 
-#include "fw/stm32_i2c.h"
+// #include "fw/stm32_i2c.h"
 
 namespace micro = mjlib::micro;
 
@@ -159,7 +159,7 @@ class AbsPort::Impl {
   void HandleConfigUpdate() {
     switch (config_.mode) {
       case kDisabled: {
-        i2c_.reset();
+        // i2c_.reset();
         break;
       }
       case kAs5048:
@@ -187,7 +187,7 @@ class AbsPort::Impl {
   MillisecondTimer* const timer_;
   const Options options_;
 
-  std::optional<Stm32I2c> i2c_;
+  // std::optional<Stm32I2c> i2c_;
   int32_t encoder_count_ = 0;
   uint8_t encoder_raw_data_[6] = {};
 };

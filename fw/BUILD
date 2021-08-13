@@ -105,8 +105,6 @@ MOTEUS_SOURCES = [
     "motor_driver.h",
     "stm32_i2c.h",
     "gpio_pin.h",
-    "i2c.h",
-    "i2c.c",
     "async_i2c.h",
     "stm32_spi.h",
     "stm32_serial.h",

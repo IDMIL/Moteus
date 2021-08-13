@@ -252,7 +252,7 @@ class BoardDebug::Impl {
 
     if (cmd_text == "i2c.state") {
       std::string message;
-      HAL_I2C_StateTypeDef state = HAL_I2C_GetState(&hi2c1);
+       HAL_I2C_StateTypeDef state = HAL_I2C_STATE_ERROR;
       message = "i2c state: ";
       switch(state) {
         case HAL_I2C_STATE_RESET:
@@ -318,7 +318,7 @@ class BoardDebug::Impl {
     }
     if (cmd_text == "i2c.status") {
       std::string message;
-      HAL_StatusTypeDef status = HAL_I2C_IsDeviceReady(&hi2c1, 8, 64, 100);
+      HAL_StatusTypeDef status = HAL_ERROR;
       message = "i2c status: ";
       switch(status) {
         case HAL_OK:

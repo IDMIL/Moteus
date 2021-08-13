@@ -16,7 +16,9 @@
 
 #include <functional>
 
-#include "mbed.h"
+// #include "mbed.h"
+#include "drivers/DigitalOut.h"
+
 #include "pinmap.h"
 
 #include "mjlib/base/inplace_function.h"

@@ -18,7 +18,11 @@
 #include <cmath>
 #include <functional>
 
-#include "mbed.h"
+// #include "mbed.h"
+#include "drivers/AnalogIn.h"
+#include "drivers/AnalogOut.h"
+#include "drivers/PwmOut.h"
+
 #include "serial_api_hal.h"
 
 #include "PeripheralPins.h"

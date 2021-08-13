@@ -14,7 +14,7 @@
 
 #include "fw/system_info.h"
 
-#include "mbed.h"
+// #include "mbed.h"
 
 #include "mjlib/base/inplace_function.h"
 #include "mjlib/base/visitor.h"

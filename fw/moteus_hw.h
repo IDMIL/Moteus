@@ -14,6 +14,15 @@
 
 #pragma once
 
+// #include "mbed.h"
+#include "platform/mbed_interface.h"
+#include "drivers/DigitalIn.h"
+#ifndef MBED_NO_GLOBAL_USING_DIRECTIVE
+using namespace mbed;
+using namespace std;
+#endif
+
+#include <string>
 namespace moteus {
 
 // The measured version of MOTEUS_HW_REV

@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include "mbed_assert.h"
-#include "mbed.h"
+// #include "mbed.h"
+#include "platform/mbed_wait_api.h"
+#include "platform/mbed_interface.h"
 
 #include "hal/gpio_api.h"
 

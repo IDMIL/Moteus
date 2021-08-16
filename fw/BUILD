@@ -107,6 +107,12 @@ MOTEUS_SOURCES = [
     "stm32.h",
     "system_info.h",
     "system_info.cc",
+    "TorqueTuner.h",
+    "TorqueTuner.cpp", 
+    "twi.h", 
+    "twi.cpp",
+    "Wire.h",
+    "Wire.cpp", 
     "uuid.h",
     "moteus.cc",
 ]

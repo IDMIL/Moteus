@@ -1,5 +1,5 @@
 /* Forked by Christian Frisson from:
- * https://github.com/ARMmbed/mbed-os targets/TARGET_STM/i2c_api.c
+ * http://github.com/ARMmbed/mbed-os targets/TARGET_STM/i2c_api.c
  * to define custom HAL_I2C_*Callback functions
  * 
  * mbed Microcontroller Library

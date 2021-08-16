@@ -2,7 +2,7 @@
 /** \addtogroup hal */
 /** @{*/
 /* Forked by Christian Frisson from:
- * https://github.com/ARMmbed/mbed-os hal/i2c_api.h
+ * http://github.com/ARMmbed/mbed-os hal/i2c_api.h
  * to define custom HAL_I2C_*Callback functions
  * 
  * mbed Microcontroller Library

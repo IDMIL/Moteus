@@ -114,6 +114,7 @@ MOTEUS_SOURCES = [
     "Wire.h",
     "Wire.cpp", 
     "uuid.h",
+    "moteus.h",
     "moteus.cc",
 ]
 

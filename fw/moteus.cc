@@ -47,6 +47,9 @@
 
 #include "i2c-api.h"
 
+#include "fw/moteus.h"
+moteus::BldcServo* bldcServo = nullptr;
+
 extern "C" {
   uint32_t kMoteusFirmwareVersion = MOTEUS_FIRMWARE_VERSION;
 }
@@ -315,6 +318,8 @@ int main(void) {
 
   // TorqueTuner
 
+  // bldcServo = nullptr;
+
   i2c_init(&mbed_i2c_, MOTEUS_ABS_SDA, MOTEUS_ABS_SCL);
   i2c_slave_mode(&mbed_i2c_, 1);
   i2c_slave_address(&mbed_i2c_, 0, 8 << 1, 0);
@@ -332,13 +337,15 @@ int main(void) {
         return options;
       }());
 
-  MoteusController moteus_controller(
+  MoteusController moteus_controller = MoteusController(
       &pool, &persistent_config, &telemetry_manager, &timer,
       &firmware_info, &abs_port);
 
   BoardDebug board_debug(
       &pool, &command_manager, &telemetry_manager, &multiplex_protocol,
       moteus_controller.bldc_servo());
+
+  bldcServo = moteus_controller.bldc_servo();
 
   persistent_config.Register("id", multiplex_protocol.config(), [](){});
 

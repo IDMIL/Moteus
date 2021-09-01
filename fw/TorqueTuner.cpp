@@ -65,6 +65,7 @@ void receiveI2C(int how_many) {
     BldcServo::CommandData command;
     // We default to no timeout for debug commands.
     command.timeout_s = std::numeric_limits<float>::quiet_NaN();
+    command.max_torque_Nm = 0.1f; // during debug: 0.1f, default: 100.0f;
     
     command.mode = BldcServo::kPosition; // kZeroVelocity
     

@@ -38,6 +38,7 @@ int16_t torque = 0;
 int32_t err = 0;
 
 BldcServo::CommandData prev_command;
+char prev_mode_rec = '?';
 
 uint16_t calcsum(uint8_t buf[], int length) {
   uint32_t val = 0;
@@ -70,6 +71,11 @@ void receiveI2C(int how_many) {
     memcpy(&torque, rx_data, 2); // int16
     memcpy(&velocity, rx_data + 2, 4); // float
     memcpy(&mode_rec, rx_data + 6, 1); // char
+
+    if(prev_mode_rec != '?' && prev_mode_rec != mode_rec){
+      bldcServo->Command(stop_command);
+    }
+    prev_mode_rec = mode_rec;
 
     BldcServo::CommandData command;
     // We default to no timeout for debug commands.

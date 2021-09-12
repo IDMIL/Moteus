@@ -53,7 +53,7 @@ void receiveI2C(int how_many) {
   uint8_t k = 0;
   BldcServo::CommandData stop_command;
   stop_command.mode = BldcServo::kStopped;
-  if(bldcServo && bldcServo->status().fault == moteus::errc::kStartOutsideLimit ){
+  if(bldcServo && bldcServo->status().mode == BldcServo::kFault){
     stop_command.rezero_position = 0.0f;
     bldcServo->Command(stop_command);
   }

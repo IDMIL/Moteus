@@ -95,10 +95,10 @@ void receiveI2C(int how_many) {
       }
     }
     if (mode_rec == 'v') {
-      command.velocity = velocity;
+      command.velocity = velocity / 60; // TorqueTuner-ESP32 revolutions per minute (rpm) to moteus revolutions per second
       command.position = kNaN; // kNaN means start at the current position.
       // TODO check max_position_slip
-      if(bldcServo && prev_command.velocity != command.velocity){
+      if(bldcServo /*&& prev_command.velocity != command.velocity*/){
         bldcServo->Command(command);
       }
     }
@@ -123,8 +123,8 @@ void sendI2C() {
 
   // Velocity
   tmp = 0;//v;
-  if(bldcServo) tmp = bldcServo->status().velocity;
-  memcpy(tx_data + 4, &tmp, 4); // float
+  if(bldcServo) tmp = bldcServo->status().velocity * 60; // moteus revolutions per second to TorqueTuner-ESP32 revolutions per minute (rpm)
+  memcpy(tx_data + 4, &tmp , 4); // float
 
   // Checksum
   checksum_tx = calcsum(tx_data, I2C_BUF_SIZE);

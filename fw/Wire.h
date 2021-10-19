@@ -62,8 +62,8 @@
     void allocateRxBuffer(size_t length);
     void allocateTxBuffer(size_t length);
 
-    // void resetRxBuffer(void);
-    // void resetTxBuffer(void);
+    void resetRxBuffer(void);
+    void resetTxBuffer(void);
 
     /*virtual*/ size_t write(const uint8_t *, size_t);
     /*virtual*/ int available(void);

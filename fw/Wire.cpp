@@ -143,9 +143,9 @@ int read(void)
     /* Commented as not I think it is not useful
      * but kept to show that it is possible to
      * reset rx buffer when no more data available */
-    /*if(rxBufferIndex == rxBufferLength) {
+    if(rxBufferIndex == rxBufferLength) {
       resetRxBuffer();
-    }*/
+    }
   }
   return value;
 }
@@ -185,8 +185,26 @@ void onRequestService(){
     // !!! this will kill any pending pre-master sendTo() activity
     txBufferIndex = 0;
     txBufferLength = 0;
+    resetTxBuffer();
     // alert user program
     sendI2C();
   // }
 
+}
+
+/**
+  * @brief  Reset Rx/Tx buffer content to 0
+  */
+void resetRxBuffer(void)
+{
+  if (rxBuffer != nullptr) {
+    memset(rxBuffer, 0, rxBufferAllocated);
+  }
+}
+
+void resetTxBuffer(void)
+{
+  if (txBuffer != nullptr) {
+    memset(txBuffer, 0, txBufferAllocated);
+  }
 }

@@ -71,7 +71,7 @@ void receiveI2C(int how_many) {
     memcpy(&mode_rec, rx_data + 6, 1); // char
 
     if(prev_mode_rec != '?' && prev_mode_rec != mode_rec){
-      bldcServo->Command(stop_command);
+       bldcServo->Command(stop_command);
     }
     prev_mode_rec = mode_rec;
 
@@ -106,18 +106,24 @@ void receiveI2C(int how_many) {
 }
 
 void sendI2C() {
+  for (int b=0;b<I2C_BUF_SIZE+CHECKSUMSIZE;b++){
+    tx_data[b] = 0;
+  }
+
   // Angle
   tmp = 0.0f;//y_1;
   if(bldcServo) tmp = bldcServo->status().position / 65536.0f * 3600.0f + 0.5f;
   int16_t unwrapped_angle_rounded = static_cast<int16_t>(tmp);
-  memcpy(tx_data, &unwrapped_angle_rounded, 2);
+  memcpy(tx_data + 1, &unwrapped_angle_rounded, 2);
 
+  // We leave tx_data[0] = 0
+  // i2c errors appear when tx_data[0] > 127
 
   // wrapped angle_rounded (not used by TorqueTuner-ESP32)
-  tmp = 0.0f;//yw - PA;
-  if(bldcServo) tmp = bldcServo->status().unwrapped_position * 3600.0f + 0.5f;
-  int16_t angle_rounded = static_cast<int16_t>(tmp);
-  memcpy(tx_data + 2, &angle_rounded, 2); // uint
+  // tmp = 0.0f;//yw - PA;
+  // if(bldcServo) tmp = bldcServo->status().unwrapped_position * 3600.0f + 0.5f;
+  // int16_t angle_rounded = static_cast<int16_t>(tmp);
+  // memcpy(tx_data + 2, &angle_rounded, 2); // uint
 
   // Velocity
   tmp = 0.0f;//v;

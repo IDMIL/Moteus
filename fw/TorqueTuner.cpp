@@ -28,12 +28,10 @@ static uint8_t tx_data[I2C_BUF_SIZE+CHECKSUMSIZE];
 
 uint16_t checksum_tx = 0;
 uint16_t checksum_rx = 0;
-uint16_t sum = 0;
 
-float tmp;
-int16_t angle_rounded = 0;
+float tmp = 0.0f;
 char mode_rec = 't';
-float velocity = 0;
+float velocity = 0.0f;
 int16_t torque = 0;
 int32_t err = 0;
 
@@ -41,7 +39,7 @@ BldcServo::CommandData prev_command;
 char prev_mode_rec = '?';
 
 uint16_t calcsum(uint8_t buf[], int length) {
-  uint32_t val = 0;
+  uint16_t val = 0;
   for (int k = 0; k < length; k++) {
     val += buf[k];
   }

@@ -109,20 +109,20 @@ void receiveI2C(int how_many) {
 
 void sendI2C() {
   // Angle
-  tmp = 0;//y_1;
-  if(bldcServo) tmp = bldcServo->status().unwrapped_position;
-  angle_rounded = static_cast<int16_t> (tmp * 3600 + 0.5f);
-  // angle_rounded = static_cast<int16_t> (read_angle() * 10 + 0.5);
-  memcpy(tx_data, &angle_rounded, 2);
+  tmp = 0.0f;//y_1;
+  if(bldcServo) tmp = bldcServo->status().position / 65536.0f * 3600.0f + 0.5f;
+  int16_t unwrapped_angle_rounded = static_cast<int16_t>(tmp);
+  memcpy(tx_data, &unwrapped_angle_rounded, 2);
 
-  // wrapped angle_rounded
-  tmp = 0;//yw - PA;
-  if(bldcServo) tmp = bldcServo->status().position;
-  angle_rounded = static_cast<int16_t>(tmp * 3600 + 0.5f);
+
+  // wrapped angle_rounded (not used by TorqueTuner-ESP32)
+  tmp = 0.0f;//yw - PA;
+  if(bldcServo) tmp = bldcServo->status().unwrapped_position * 3600.0f + 0.5f;
+  int16_t angle_rounded = static_cast<int16_t>(tmp);
   memcpy(tx_data + 2, &angle_rounded, 2); // uint
 
   // Velocity
-  tmp = 0;//v;
+  tmp = 0.0f;//v;
   if(bldcServo) tmp = bldcServo->status().velocity * 60; // moteus revolutions per second to TorqueTuner-ESP32 revolutions per minute (rpm)
   memcpy(tx_data + 4, &tmp , 4); // float
 

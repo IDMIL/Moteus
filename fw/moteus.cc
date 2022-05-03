@@ -177,9 +177,6 @@ volatile uint8_t g_measured_hw_pins;
 volatile uint8_t g_measured_hw_rev;
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 namespace {
 struct CanConfig {
   uint32_t prefix = 0;
@@ -194,23 +191,11 @@ struct CanConfig {
   }
 };
 }
-=======
 // TorqueTuner
-=======
-// new
->>>>>>> Refactor i2c communication split into TorqueTuner twi Wire
-=======
-// new
->>>>>>> 65b3b49db61fc91d87f0833177eadf872b062c04
 
 #define DEVICE_I2CSLAVE 1
 i2c_t mbed_i2c_;
 std::string i2cErrorMessage;
-<<<<<<< HEAD
->>>>>>> Fork i2c_api from https://github.com/ARMmbed/mbed-os into i2c-api
-=======
->>>>>>> 65b3b49db61fc91d87f0833177eadf872b062c04
-
 #include "Wire.h"
 
 int main(void) {

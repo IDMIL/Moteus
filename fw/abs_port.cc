@@ -85,28 +85,6 @@ class AbsPort::Impl {
   }
 
   void Poll() {
-    if (i2c_) {
-      i2c_->Poll();
-      const auto read_status = i2c_->CheckRead();
-
-      if (read_status == Stm32I2c::ReadStatus::kComplete) {
-        if (config_.mode == kAs5048) {
-          ParseAs5048();
-        } else if (config_.mode == kAs5600) {
-          ParseAs5600();
-        }
-      } else if (read_status == Stm32I2c::ReadStatus::kError) {
-        status_.encoder_error_count++;
-      }
-
-      status_.position =
-          static_cast<float>(
-              static_cast<int16_t>(
-                  status_.encoder_raw +
-                  config_.position_offset)) /
-          65536.0f *
-          config_.position_scale;
-    }
     // if (i2c_) {
       // i2c_->Poll();
       // const auto read_status = i2c_->CheckRead();
@@ -163,25 +141,6 @@ class AbsPort::Impl {
   }
 
   void StartAs5048Read() {
-    MJ_ASSERT(!!i2c_);
-    static_assert(sizeof(encoder_raw_data_) >= 6);
-    i2c_->StartReadMemory(
-        config_.encoder_i2c_address,
-        AS5048_REG_AGC,
-        mjlib::base::string_span(
-            reinterpret_cast<char*>(&encoder_raw_data_[0]),
-            6));
-  }
-
-  void StartAs5600Read() {
-    MJ_ASSERT(!!i2c_);
-    static_assert(sizeof(encoder_raw_data_) >= 3);
-    i2c_->StartReadMemory(
-        config_.encoder_i2c_address,
-        AS5600_REG_STATUS,
-        mjlib::base::string_span(
-            reinterpret_cast<char*>(&encoder_raw_data_[0]),
-            3));
     // MJ_ASSERT(!!i2c_);
     // i2c_->StartReadMemory(
     //     config_.encoder_i2c_address,
@@ -191,23 +150,24 @@ class AbsPort::Impl {
     //         sizeof(encoder_raw_data_)));
   }
 
+  void StartAs5600Read() {
+    // MJ_ASSERT(!!i2c_);
+    // static_assert(sizeof(encoder_raw_data_) >= 3);
+    // i2c_->StartReadMemory(
+    //     config_.encoder_i2c_address,
+    //     AS5600_REG_STATUS,
+    //     mjlib::base::string_span(
+    //         reinterpret_cast<char*>(&encoder_raw_data_[0]),
+    //         3));
+  }
+
+
   void HandleConfigUpdate() {
     switch (config_.mode) {
       case kDisabled: {
         // i2c_.reset();
         break;
       }
-      case kAs5048:
-      case kAs5600: {
-        i2c_.emplace(
-            [&]() {
-              Stm32I2c::Options options;
-              options.sda = options_.sda;
-              options.scl = options_.scl;
-              options.frequency = config_.i2c_hz;
-              options.i2c_mode = static_cast<I2cMode>(config_.i2c_mode);
-              return options;
-            }());
       case kAs5048: {
         // i2c_.emplace(
         //     [&]() {
@@ -219,6 +179,9 @@ class AbsPort::Impl {
         //       return options;
         //     }());
         
+        break;
+      }
+      case kAs5600: {
         break;
       }
       case kNumModes: {

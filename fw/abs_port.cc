@@ -116,28 +116,28 @@ class AbsPort::Impl {
   }
 
   void ParseAs5048() {
-    // We got new data, publish it.
-    status_.encoder_raw =
-        (encoder_raw_data_[4] << 8) |
-        (encoder_raw_data_[5]);
-    status_.encoder_valid = true;
+    // // We got new data, publish it.
+    // status_.encoder_raw =
+    //     (encoder_raw_data_[4] << 8) |
+    //     (encoder_raw_data_[5]);
+    // status_.encoder_valid = true;
 
-    status_.ams_agc = encoder_raw_data_[0];
-    status_.ams_diag = encoder_raw_data_[1];
-    status_.ams_mag =
-        (encoder_raw_data_[2] << 8) |
-        (encoder_raw_data_[3]);
+    // status_.ams_agc = encoder_raw_data_[0];
+    // status_.ams_diag = encoder_raw_data_[1];
+    // status_.ams_mag =
+    //     (encoder_raw_data_[2] << 8) |
+    //     (encoder_raw_data_[3]);
   }
 
   void ParseAs5600() {
-    status_.encoder_raw =
-        (encoder_raw_data_[1] << 12) |
-        (encoder_raw_data_[0] << 4);
-    status_.encoder_valid = true;
+    // status_.encoder_raw =
+    //     (encoder_raw_data_[1] << 12) |
+    //     (encoder_raw_data_[0] << 4);
+    // status_.encoder_valid = true;
 
-    status_.ams_agc = 0;
-    status_.ams_diag = encoder_raw_data_[0];
-    status_.ams_mag = 0;
+    // status_.ams_agc = 0;
+    // status_.ams_diag = encoder_raw_data_[0];
+    // status_.ams_mag = 0;
   }
 
   void StartAs5048Read() {

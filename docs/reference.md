@@ -12,13 +12,17 @@ the three phases.
 
 The primary control mode, labeled as "position" mode in the rest of
 this document is a two stage cascaded controller, with both running at
-the switching frequency of 40kHz.  The outer stage is an integrated
-position/velocity PID controller with optional feedforward torque.
-The output of that loop is a desired torque/current for the Q phase of
-the FOC controller.  The inner stage is a current mode PI controller.
-Its output is the desired voltage value for the Q phase.  Then the
-magnetic encoder is used to map the D/Q phase voltage values to the 3
-phases of the motor.
+the switching frequency (by default 40kHz).
+
+The outermost stage is an optional limited acceleration and velocity
+trajectory planner.  Within that is an integrated position/velocity
+PID controller with optional feedforward torque.  The output of that
+loop is a desired torque/current for the Q phase of the FOC
+controller.
+
+The inner stage is a current mode PI controller.  Its output is the
+desired voltage value for the Q phase.  Then the magnetic encoder is
+used to map the D/Q phase voltage values to the 3 phases of the motor.
 
 ![Control Structure](control_structure.png)
 
@@ -26,8 +30,9 @@ More precisely, the "Position Controller" implements the following
 control law:
 
 ```
+acceleration = trajectory_follower(command_position, command_velocity)
+control_velocity = command_velocity OR control_velocity + acceleration * dt OR 0.0
 control_position = command_position OR control_position + control_velocity * dt
-control_velocity = command_velocity OR control_velocity OR 0.0
 position_error = control_position - feedback_position
 velocity_error = control_velocity - feedback_velocity
 position_integrator = limit(position_integrator + ki * position_error * dt, ilimit)
@@ -41,7 +46,7 @@ And the "Current Controller" implements the following control law:
 
 ```
 current_error = command_current - feedback_current
-current_integrator = limit(current_integrator + kp * current_error, ilimit)
+current_integrator = limit(current_integrator + ki * current_error, ilimit)
 voltage = current_integrator + kp * current_error
 ```
 
@@ -71,35 +76,31 @@ disturbances is decreased.
 
 ### Low Speed or Precise Positioning ###
 
-For either operation either a very low speeds, or when precise
-positioning performance is desired, it is recommended to configure a
-non-zero `ki` and `ilimit` term in the position controller
+For either operation at very low speeds, or when precise positioning
+performance is desired, it is recommended to configure a non-zero `ki`
+and `ilimit` term in the position controller
 ([reference](#servopid_position)).  This will compensate for cogging
 torque (at the expense of overall torque bandwidth).  It may also be
 beneficial to select a lower value than default for `moteus_tool
 --cal-bw-hz` during calibration.
 
-### Internally Generated Trajectories ###
+### Constant Acceleration Trajectories ###
 
-moteus currently only supports constant velocity trajectories.
-Normally, the velocity commanded will continue indefinitely, either
-until a watchdog timeout occurs or the configured position limit is
-reached.
+Velocity and acceleration limits can be configured either globally, or
+on a per-command basis which will cause moteus to internally generate
+continuous acceleration limited trajectories to reach the given
+position and velocity.  Once the trajectory is complete, the command
+velocity is continued indefinitely.
 
-Through the use of the optional "stop_position" of the position
-controller, moteus can set the velocity to zero when a specific
-control position is achieved.  This feature can be used in
-applications where the host commands the controller at a low update
-rate.
+### Jerk Limited Trajectories ###
 
-### Constant Acceleration or Jerk ###
-
-moteus only supports constant velocity internal trajectories.  To
-approximate a constant acceleration or constant jerk trajectory, the
-host processor should send a sequence of piecewise linear constant
-velocity trajectories which approximate the desired one.  This would
-be done by sending commands consisting of at least a position and
-velocity at some moderate to high rate.
+moteus only supports acceleration limited internal trajectories.  To
+approximate a constant jerk trajectory, the host processor should send
+a sequence of piecewise linear constant velocity trajectories which
+approximate the desired one.  This would be done by sending commands
+consisting of at least a position and velocity at some moderate to
+high rate while disabling the internal velocity and acceleration
+limits.
 
 ### High Torque Bandwidth ###
 
@@ -273,6 +274,12 @@ values.
 - int16 => 1 LSB => 0.00025 Hz > 0.09 dps
 - int32 => 1 LSB => 0.00001 Hz => 0.0036 dps
 
+#### A.2.a.8 Acceleration (measured in revolutions / s^2) ####
+
+- int8 => 1 LSB => 0.05 l/s^2
+- int16 => 1 LSB => 0.001 l/s^2
+- int32 => 1 LSB => 0.00001 l/s^2
+
 ### A.2.b Registers ###
 
 #### 0x000 - Mode ####
@@ -294,6 +301,8 @@ to write.
 - 11 => timeout
 - 12 => zero velocity
 - 13 => stay within
+- 14 => measure inductance
+- 15 => brake
 
 #### 0x001 - Position ####
 
@@ -334,6 +343,19 @@ Mode: Read only
 If an absolute encoder is configured on the ABS port, its value will
 be reported here in revolutions.
 
+#### 0x00b - Trajectory complete ####
+
+Mode: Read only
+
+Non-zero if the current acceleration or velocity limited trajectory is
+complete, and the controller is following the final velocity.
+
+#### 0x00c - Rezero state ####
+
+Mode: Read only
+
+Non-zero if the controller has been rezeroed since power on.
+
 #### 0x00d - Voltage ####
 
 Mode: Read only
@@ -351,6 +373,30 @@ The current board temperature, measured in degrees celsius.
 Mode: Read only
 
 A fault code which will be set if the primary mode is 1 (Fault).
+
+* 32 - *calibration fault* - the encoder was not able to sense a
+  magnet during calibration
+* 33 - *motor driver fault* - the most common reason for this is
+  undervoltage, moteus attempted to draw more current than the supply
+  could provide.  Other electrical faults may also report this error,
+  the `drv8323` diagnostic tree has more information.
+* 34 - *over voltage* - the bus voltage exceeded `servo.max_voltage`.
+  This can happen due to misconfiguration, or if the controller
+  regenerated power with a supply that cannot sink power and no flux
+  braking was configured.
+* 35 - *encoder fault* - the encoder readings are not consistent with
+  a magnet being present.
+* 36 - *motor not configured* - the `moteus_tool --calibrate`
+  procedure has not been run on this motor.
+* 37 - *pwm cycle overrun* - an internal firmware error
+* 38 - *over temperature* - the maximum configured temperature has
+  been exceeded
+* 39 - *outside limit* - an attempt was made to start position control
+  while outside the bounds configured by `servopos.position_min` and
+  `servopos.position_max`.
+
+The full list can be found at: [fw/error.h](../fw/error.h#L25)
+
 
 ### 0x010 / 0x011 / 0x012 - PWM phase A / B / C ###
 
@@ -469,6 +515,11 @@ When in Position mode, and a non-zero velocity is commanded, stop
 motion when reaching the given position.  NaN / maximally negative
 means no limit is applied.  If unspecified, NaN is used.
 
+Note, if the controller is ever commanded to move *away* from the stop
+position, say with a velocity command that is inconsistent with the
+start and stop position, then it will act as if a 0 velocity has been
+commanded and the current command position equals the stop position.
+
 #### 0x027 - Watchdog timeout ####
 
 Mode: Read/write
@@ -478,6 +529,23 @@ If this timeout expires before another command is received, the
 controller will enter the Timeout state.  The default is 0.0, which
 means to use the system-wide configured default.  NaN / maximally
 negative means apply no enforced timeout.
+
+#### 0x028 - Velocity limit ####
+
+Mode: Read/write
+
+This can be used to override the global velocity limit for internally
+generated trajectories.  If unspecified, it is NaN / maximally
+negative, which implies to use the global configurable default.
+
+#### 0x029 - Acceleration limit ####
+
+Mode: Read/write
+
+This can be used to override the global acceleration limit for
+internally generated trajectories.  If unspecified, it is NaN /
+maximally negative, which implies to use the global configurable
+default.
 
 ### 0x030 - Proportional torque ###
 
@@ -658,7 +726,7 @@ Decoded, that means:
  - `70ff` torque is 0xff70 = -144 = -1.44 Nm
 - `23` reply with 3 int8 values
  - `0d` starting at register 0x00d
- - `18` voltage is 24V
+ - `18` voltage is 12V
  - `14` temperature is 20C
  - `00` no fault
 
@@ -723,6 +791,10 @@ Each optional element consists of a prefix character followed by a value.  Permi
 - `f` - feedforward torque in Nm
 - `t` - timeout: If another command is not received in this many
   seconds, enter the timeout mode.
+- `v` - velocity limit: the given value will override the global
+  velocity limit for the duration of this command.
+- `a` - acceleration limit: the given value will override the global
+  acceleration limit for the duration of this command.
 
 The position, velocity, maximum torque, and all optional fields have
 the same semantics as for the register protocol documented above.
@@ -763,6 +835,11 @@ d within <lowbound> <highbound> <max_torque> [options...]
 The fields have the same semantics as for the register protocol
 documented above.  The options are the same as for `d pos`, with the
 exception of stop position which is not supported.
+
+### `d brake` ###
+
+Enter the "brake" state.  In this mode, all motor phases are shorted
+to ground, resulting in a passive "braking" action.
 
 ### `d index` ###
 
@@ -927,6 +1004,13 @@ maybe not, it depends upon your goals.
 
 The servo ID presented on the CAN bus.  After this is modified, you need to immediately adjust which servo ID you communicate with in order to continue communication or save the parameters.
 
+## `can.prefix` ##
+
+A 13 bit integer used as the upper 13 bits for the ID of all CAN
+communication.  As with `id.id` this takes effect immediately, so
+after changing it, communication must be restarted with the correct
+prefix in order to do things like save the configuration.
+
 ## `motor.position_offset` ##
 
 This value is added to `servo_stats.position` before reporting
@@ -961,8 +1045,6 @@ These configure the position mode PID controller.
 * `iratelimit` - The maximum rate at which the integral term can
    wind up, in N*m/s.  <0 means "no limit"
 * `ilimit` - The total maximum I term, in Nm
-* `kpkd_limit` - The total maximum combined P and D terms, in Nm.
-   <0 means "no limit"
 * `max_desired_rate` - If non-zero, the commanded position is
   limited to change at this rate in Hz.
 
@@ -979,6 +1061,88 @@ thus *after* any scaling in position, velocity, and torque implied by
 These have the same semantics as the position mode PID controller, and
 affect the current control loop.
 
+## `servo.default_velocity_limit` / `servo.default_accel_limit` ##
+
+Limits to be placed on trajectories generated within moteus.  If
+either is `nan`, then that limit is unset.  The limits may also be
+overriden individually on a per command basis.  The semantics of the
+limits are as follows:
+
+- *Neither set (both nan)* In this case, position and velocity
+  commands take immediate effect.  The control position will be
+  initialized to the command position, and the control velocity will
+  be set to the command velocity.  The control position will advance
+  at the given velocity indefinitely, or until the command stop
+  position is reached.
+
+- *Only velocity limit set*: In this case, until the desired position
+  is reached, the control velocity will be set to either the positive
+  or negative velocity limit.  Once the desired position has been
+  reached, then the velocity will continue indefinitely at the command
+  velocity.
+
+- *Both set*: In this case, neither the command position nor the
+  command velocity are immediately applied.  Instead, the control
+  velocity is advanced by the configured acceleration each timestep
+  while being limited to the maximum configured velocity in order to
+  achieve the desired position and velocity.  Once the desired
+  position and velocity have been achieved, then that final velocity
+  is continued indefinitely.  Note that this may require "back
+  tracking" if the current and final velocities do not permit an
+  approach in a single pass.
+
+- *Only acceleration limit set*: This behaves like the "both set"
+  case, except that the control velocity is allowed to increase or
+  decrease arbitrarily.
+
+NOTE: This is limited internally to be no more than
+`servo.max_velocity`.
+
+## `servo.voltage_mode_control` ##
+
+When set to non-zero, the current control loop is not closed, and all
+current commands in amperes are instead treated as voltage mode
+commands in volts related by the calibrated phase resistance.  For
+high winding resistance motors, the default current sense resistors
+are too small for accurate current sensing, resulting in significant
+cogging torque and current sense noise.  If replacing the current
+sense resistors is not an option, this flag can be used to achieve
+smooth control.  The downside is that the actual torque will no longer
+follow the applied torque accurately at speed, or in the face of
+external disturbances.
+
+When set, the `servo.pid_dq` configuration values no longer affect
+anything.
+
+## `servo.fixed_voltage_mode` ##
+
+If non-zero, then no feedback based control of either position or
+current is done.  Instead, a fixed voltage is applied to the phase
+terminals based on the current commanded position and the configured
+number of motor poles.  In this mode, the encoder and current sense
+resistors are not used at all for control.
+
+This is a similar control mode to inexpensive brushless gimbal
+controllers, and relies on burning a fixed amount of power in the
+motor windings continuously.
+
+When this mode is active, the reported position and velocity will be 0
+when the drive is disabled, and exactly equal to the control position
+when it is enabled.
+
+Various derating limits are inoperative in this mode:
+ * torque derating for temperature
+ * torque derating when outside position bounds
+ * the maximum current limit
+ * the commanded maximum torque
+
+A fault will still be triggered for over-temperature.
+
+## `servo.fixed_voltage_control_V` ##
+
+In the fixed voltage control mode, the voltage to apply to the output.
+
+
 ## `servo.max_position_slip` ##
 
 When finite, this enforces a limit on the difference between the
@@ -993,7 +1157,15 @@ torque is stopped.
 
 ## `servo.max_power_W` ##
 
-The controller will limit the output power to this value.
+The controller will limit the output power to this value.  The value
+is defined relative to a PWM rate of 40kHz and is scaled linearly with
+respect to the PWM rate.
+
+## `servo.pwm_rate_hz` ##
+
+The PWM rate to use, defaulting to 40000.  Allowable values are
+between 15000 and 60000.  Lower values increase efficiency, but limit
+peak power and reduce the maximum speed and control bandwidth.
 
 ## `servo.derate_temperature` ##
 
@@ -1068,6 +1240,15 @@ When in the "position timeout" mode the controller acts to damp the
 output.  This parameter controls the maximum torque available for such
 damping.
 
+## `servo.timeout_mode` ##
+
+Selects what behavior will take place in the position timeout mode.
+The allowable values are a subset of the top level modes.
+
+* 0 - "stopped" - the driver is disengaged
+* 12 - "zero velocity"
+* 15 - "brake"
+
 ## `servo.rezero_from_abs` ##
 
 If set to one, then shortly after startup, the value of the position
@@ -1078,7 +1259,8 @@ measured at the ABS port.
 
 Configures the mode of operation of the ABS port:
 * 0 - disabled
-* 1 - AS5048B
+* 1 - AS5048B (I2C address is default 64)
+* 2 - AS5600  (I2C address is default 54)
 
 ## `abs_port.i2c_mode` ##
 
@@ -1090,6 +1272,10 @@ Configures what I2C mode will be used:
 ## `abs_port.i2c_hz` ##
 
 What rate to operate the I2C bus at.
+
+## `abs_port.encoder_i2c_address` ##
+
+The I2C address to communicate with the auxiliary encoder.
 
 ## `abs_port.encoder_poll_ms` ##
 
@@ -1104,8 +1290,61 @@ The reported position is calculated from the raw value as follows:
 position = (raw + offset) / 65536 * scale
 ```
 
+## `encoder.mode` ##
+
+Selects whether the onboard magnetic encoder or an external magnetic
+encoder is used.
+
+* 0 - onboard
+* 1 - external AS5047 compatible SPI encoder
 
 # D. Maintenance #
+
+## tview usage ##
+
+tview can monitor and control 1 or more devices simultaneously.  It can be started with:
+
+```
+python3 -m moteus_gui.tview --target 1[,2,3]...
+```
+
+When running, the configuration for each can be modified in the left hand tab, and live telemetry values can be displayed or plotted from the right hand tab.  diagnostic mode commands may be issued in the bottom terminal window.
+
+A simple command and scripting language beyond the diagnostic protocol is available within the tview terminal window.
+
+### Communicating with a specific device ###
+
+If more than one device is available, commands can be sent to a specific device by prefixing the command with `ID>`.  For instance, to send a stop command to ID #2, you can do:
+
+```
+2>d stop
+```
+
+The 'A' character can be used to send to all devices simultaneously.
+
+```
+A>d stop
+```
+
+### Sending multiple commands at once ###
+
+The `&&` token may be used to separate individual commands, which will be issued back to back.  For instance:
+
+```
+1>d stop && 2>d stop
+```
+
+Will send the command to both devices.
+
+### Delays ###
+
+A delay may be inserted into a sequence of commands by entering an integer number of milliseconds prefixed by the colon (':') character.  For instance:
+
+```
+d pos nan 0.5 1 s0.5 && :1000 && d stop
+```
+
+Will command a position mode, wait 1s, then command a stop.
 
 ## Calibration ##
 
@@ -1164,15 +1403,8 @@ Or, if already built, flashed using:
 
 ### openocd ###
 
-You may need a custom openocd, a known working one can be had by:
-
-```
-sudo apt install autotools-dev automake autogen autoconf libtool libusb-1.0-0-dev
-git clone https://github.com/mjbots/openocd
-cd openocd
-./bootstrap
-./configure && make && sudo make install
-```
+openocd 0.11.0 or newer is required.  You can find binaries for many
+platforms at: https://xpack.github.io/openocd/releases/
 
 
 ### Building firmware ###
@@ -1250,6 +1482,21 @@ Looking at the pins of the power connector with the top of the board
 up, the ground pin is to the left with the chamfered corner and the
 positive supply is to the right with the square corner.
 
+### Pico-SPOX 6 ENC ###
+
+Looking at the back of the board with the ENC connector at the top,
+pins are numbered 1 as the rightmost, and 6 as the leftmost.
+
+ - 1 - 3.3V
+ - 2 - CS
+ - 3 - GND
+ - 4 - SCLK
+ - 5 - MISO
+ - 6 - MOSI
+
+These pads can be populated with a Molex Pico-SPOX 6 connector PN
+0874380643, or as an alternate, TE 5-1775444-6.
+
 # F. CAN-FD communication #
 
 ## moteus_tool and tview configuration ##
@@ -1310,7 +1557,7 @@ ip link set can0 up type can \
   restart-ms 1000 fd on
 ```
 
-# G. Limits #
+# G. Application Limitations #
 
 ## Position ##
 
@@ -1351,3 +1598,63 @@ or ~467 revolutions per second before any reducers.  Note, most motors
 will be incapable of this speed either mechanically or electrically.
 
 The maximum electrical frequency is 4kHz.
+
+# Deployment Considerations #
+
+## Phase Wire Soldering ##
+
+The connections between moteus and the motor under control must be high quality.  Poor quality solder joints can cause intermittent changes in resistance, sparking, and high voltage transients.  High quality solder joints require:
+
+* Sufficient flux to clean oxides off of the wire and the via
+* Sufficient temperature so that the entire wire and via is hot enough for the solder to wet all surfaces
+
+For the former, it is often necessary to add copious amounts of additional flux in addition to the rosin core inside many solders.  For the latter, a high power soldering iron, with a fat tip, and what seems like a long time may be necessary.  The temperature is definitely insufficient if solder touched to any part of the via or wire does not melt and wick instantly.  Usually a small amount of solder is placed between the tip and wire to act as a heat transfer agent.  Then the iron rests on the via and wire for between 5-30s until it looks like the initial solder has wicked fully into the via.  Then additional solder can be added until it forms a clean smooth fillet around the entire via wicking up to the wire.
+
+When complete, the back side of the hole can be examined, and if successful, solder will have wicked partially down out of the via onto the other side forming a clean, smooth fillet there as well.
+
+A demonstration of this can be found in the following video: https://www.youtube.com/watch?v=mZ9w_TaWmjQ
+
+## Power Cable Construction ##
+
+When constructing power cables using XT30 connectors, it is critical that solder joints be sound, otherwise intermittent connectivity can result.  This can cause sparking and high voltage transients.  The soldering principles are the same as in the phase wire soldering section above.
+
+A demonstration of XT30 soldering can be found in the following video:
+https://www.youtube.com/watch?v=f6WtDFWuxuQ
+
+## Power Connectorization ##
+
+For moteus to operate without damage, the XT30 connectors used to transmit power must make a solid connection that is non-intermittent.  As with poor soldering, an intermittent connection can cause inductive spikes, which will destroy components on the controller.
+
+When connectors are functional, moderate insertion force should be required and the connectors should not "wiggle" much after insertion.
+
+The XT30 is not rated for any significant amount of mechanical force when mated.  For any application where cables may flex, strain relief should be used such that no force is applied to the connector.  The connector may be damaged if a system goes "out of control" even in one instance, although milder mechanical stress may cause accelerated fatigue and failure.
+
+If sparks are observed, that is *definitely* a problem and the system should be powered off until the connectors can be replaced and mitigations made for what led to that event.
+
+Genuine AMASS connectors are rated for 1000 insertions assuming no other mechanical damage, however off-brand connectors may have worse tolerances and may not make a reliable connection for even one insertion.
+
+## Regenerative Braking Safety ##
+
+moteus can be commanded to sharply decelerate loads, either directly in response to commands, or due to external disturbances.  When braking a load, moteus by default applies the generated power to the input DC bus.
+
+If there is nowhere for this power to go, this can cause problems.  The voltage can increase without bound, which in mild cases will cause the CAN transceiver on all devices connected to the bus to fail, and in severe cases can explode the main FETs or other components on the board.
+
+Here's what you should know about the facilities moteus has to deal with this, and what you can do to make your design safer.
+
+### Flux braking ###
+
+The feature within moteus itself to deal with this is "flux braking".  The flux braking implementation will dissipate extra power in the windings of the motor when the bus voltage gets above a certain threshold.  This is controlled by the `servo.flux_brake_min_voltage` and `servo.flux_brake_resistance_ohm` parameters documented above.
+
+### Design considerations ###
+
+The following design considerations can be used to minimize the risk of damage to hardware in the event of overvoltage.  These are not a substitute for validation in progressively more demanding situations, but they can help you start off in a good place.
+
+- *Configure Flux Braking*: To have optimal effect, the flux braking minimum voltage should be approximately only 1.5V above the maximum voltage you expect your supply to provide.  Additionally, the resistance may need to be lowered.  When adjusting the resistance, it is wise to test for stability by gradually increasing the voltage with the drivers engaged using a programmable supply and monitoring for instability in the voltage bus.  This can be identified either with an oscilloscope or audibly.  The default values are set to provide a baseline of protection without compromising the maximum voltage rating of the controller, but more aggressive parameters can be useful when your system voltage is lower and you are able to validate stability.
+
+- *Power from a battery, not a PSU*: When not charged, batteries are capable of sinking current to minimize over-voltage transients.  However, if the battery is fully charged, most battery management systems drastically reduce the allowable charging current.  Thus, a battery is only useful as a mitigation if it is never charged above say 75 or 80% state of charge.
+
+- *Decrease overall system voltage*: If you run the moteus controller with say a 10S battery, the peak input voltage can be as high as 42V.  That does not leave very much margin for regenerative loads.  For applications that experience sharp regenerative loads and do not have a battery capable of charging always attached, it is recommended not to exceed 8S (33.6V peak).
+
+- *Lower the over-voltage fault*: The configuration parameter `servo.max_voltage` can be lowered for all devices on the bus.  If set above the highest expected transient, this can reduce the likelihood of severe transients causing damage.
+
+- *Use a supply which can sink as well as source*: Powering from an inexpensive lab supply is the most dangerous, as they typically have no ability to sink current, only source it.  A "two quadrant" supply is the necessary device.

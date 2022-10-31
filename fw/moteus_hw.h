@@ -1,4 +1,4 @@
-// Copyright 2018-2020 Josh Pieper, jjp@pobox.com.
+// Copyright 2018-2022 Josh Pieper, jjp@pobox.com.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,9 +27,6 @@ extern std::string i2cErrorMessage;
 
 namespace moteus {
 
-// The measured version of MOTEUS_HW_REV
-extern volatile uint8_t g_measured_hw_rev;
-
 // r1 silk
 // #define MOTEUS_HW_REV 0
 
@@ -48,10 +45,17 @@ extern volatile uint8_t g_measured_hw_rev;
 // r4.4 silk
 // #define MOTEUS_HW_REV 5
 
+// r4.5 silk
+// #define MOTEUS_HW_REV 6
+
+// r4.5b-r4.8 silk
+// #define MOTEUS_HW_REV 7
+
+
 // The most recent version of the HW.
 #ifndef MOTEUS_HW_REV
-// r4.5 silk
-#define MOTEUS_HW_REV 6
+// r4.11 silk
+#define MOTEUS_HW_REV 8
 #endif
 
 // The mapping between MOTEUS_HW_REV and the version pins on the
@@ -65,12 +69,16 @@ constexpr int kHardwareInterlock[] = {
   0,   // r4.2/r4.3 (unfortunately, indistinguishable from the interlock)
   1,   // r4.4
   2,   // r4.5
+  3,   // r4.5b-r4.8
+  4,   // r4.10
 };
 #else
 constexpr int kHardwareInterlock[] = {
   0,   // r1
   1,   // r2
   2,   // r3 & r3.1
+  -1,  // never printed for f4
+  -1,  // never printed for f4
   -1,  // never printed for f4
   -1,  // never printed for f4
   -1,  // never printed for f4
@@ -83,7 +91,8 @@ constexpr int kCompatibleHwRev[] = {
   // 3 isn't compatible, but we forgot to rev the version pins
   3,
   4, 5,
-  6,
+  6, 7,
+  8
 };
 
 #define DRV8323_ENABLE PA_3
@@ -128,7 +137,9 @@ constexpr int kCompatibleHwRev[] = {
 #elif MOTEUS_HW_REV >= 3
 #define HWREV_PIN0 PC_6
 #define HWREV_PIN1 PA_15
-#define HWREV_PIN2 PC_13
+// Previously this was documented as PC_13, however we never pulled it
+// down, and decided to use PC_13 for something else.
+#define HWREV_PIN2 PA_10
 #endif
 
 #if MOTEUS_HW_REV <= 2
@@ -172,14 +183,6 @@ constexpr int kCompatibleHwRev[] = {
 #define MOTEUS_MSENSE_5_AND_LATER PA_8
 #endif
 
-#ifndef MOTEUS_CURRENT_SENSE_OHM
-#if MOTEUS_HW_REV <= 1
-#error "Not supported"
-#elif MOTEUS_HW_REV >= 2
-#define MOTEUS_CURRENT_SENSE_OHM 0.0005f
-#endif
-#endif
-
 #ifndef MOTEUS_VSENSE_ADC_SCALE
 #define MOTEUS_VSENSE_ADC_SCALE_PRE6 0.00884f
 #define MOTEUS_VSENSE_ADC_SCALE_POST6 0.017947f
@@ -203,6 +206,8 @@ constexpr int kCompatibleHwRev[] = {
 #define MOTEUS_AS5047_CS PB_11
 #endif
 
+#define MOTEUS_EXTERNAL_ENCODER_CS PC_13
+
 #if MOTEUS_HW_REV >= 3
 #define MOTEUS_CAN_TD PA_12
 #define MOTEUS_CAN_RD PA_11
@@ -220,15 +225,8 @@ constexpr int kCompatibleHwRev[] = {
 #define MOTEUS_ABS_SCL PB_8
 #define MOTEUS_ABS_SDA PB_9
 
-#if defined(TARGET_STM32G4)
-#define MOTEUS_CCM_ATTRIBUTE __attribute__ ((section (".ccmram")))
-#else
-#error "Unknown target"
-#endif
-
-
 #define MOTEUS_MODEL_NUMBER ((MOTEUS_HW_REV) << 8 | 0x00)
-#define MOTEUS_FIRMWARE_VERSION 0x000102
+#define MOTEUS_FIRMWARE_VERSION 0x000104
 
 // Version history:
 
@@ -242,5 +240,10 @@ constexpr int kCompatibleHwRev[] = {
 // # 0x0102 #
 //
 // * Removed servo.feedforward_scale entirely
+
+// # 0x0103 #
+//
+// * Added servo.pwm_scale, and for r4.8 boards changed the default
+//   value of pwm_comp_off / pwm_comp_mag.
 
 }

@@ -1,4 +1,4 @@
-# Copyright 2020 Josh Pieper, jjp@pobox.com.
+# Copyright 2020-2022 Josh Pieper, jjp@pobox.com.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -144,6 +144,7 @@ class Register(enum.IntEnum):
     Q_CURRENT = 0x004
     D_CURRENT = 0x005
     ABS_POSITION = 0x006
+    TRAJECTORY_COMPLETE = 0x00b
     REZERO_STATE = 0x00c
     VOLTAGE = 0x00d
     TEMPERATURE = 0x00e
@@ -173,12 +174,22 @@ class Register(enum.IntEnum):
     COMMAND_POSITION_MAX_TORQUE = 0x025
     COMMAND_STOP_POSITION = 0x026
     COMMAND_TIMEOUT = 0x027
+    COMMAND_VELOCITY_LIMIT = 0x028
+    COMMAND_ACCEL_LIMIT = 0x029
 
     POSITION_KP = 0x030
     POSITION_KI = 0x031
     POSITION_KD = 0x032
     POSITION_FEEDFORWARD = 0x033
     POSITION_COMMAND = 0x034
+
+    COMMAND_WITHIN_LOWER_BOUND = 0x040
+    COMMAND_WITHIN_UPPER_BOUND = 0x041
+    COMMAND_WITHIN_FEEDFORWARD_TORQUE = 0x042
+    COMMAND_WITHIN_KP_SCALE = 0x043
+    COMMAND_WITHIN_KD_SCALE = 0x044
+    COMMAND_WITHIN_MAX_TORQUE = 0x045
+    COMMAND_WITHIN_TIMEOUT = 0x046
 
     REGISTER_MAP_VERSION = 0x102
     SERIAL_NUMBER = 0x120
@@ -213,10 +224,17 @@ class QueryResolution:
     q_current = mp.IGNORE
     d_current = mp.IGNORE
     abs_position = mp.IGNORE
+    trajectory_complete = mp.IGNORE
     rezero_state = mp.IGNORE
     voltage = mp.INT8
     temperature = mp.INT8
     fault = mp.INT8
+
+    # Additional registers can be queried by enumerating them as keys
+    # in this dictionary, with the resolution as the matching value.
+    _extra = {
+        # 0x020 : mp.F32, ...
+    }
 
 
 class PositionResolution:
@@ -228,6 +246,8 @@ class PositionResolution:
     maximum_torque = mp.F32
     stop_position = mp.F32
     watchdog_timeout = mp.F32
+    velocity_limit = mp.F32
+    accel_limit = mp.F32
 
 
 class CurrentResolution:
@@ -241,6 +261,9 @@ class Parser(mp.RegisterParser):
 
     def read_velocity(self, resolution):
         return self.read_mapped(resolution, 0.1, 0.00025, 0.00001)
+
+    def read_accel(self, resolution):
+        return self.read_mapped(resolution, 0.05, 0.001, 0.00001)
 
     def read_torque(self, resolution):
         return self.read_mapped(resolution, 0.5, 0.01, 0.001)
@@ -271,6 +294,9 @@ class Writer(mp.WriteFrame):
 
     def write_velocity(self, value, resolution):
         self.write_mapped(value, 0.1, 0.00025, 0.00001, resolution)
+
+    def write_accel(self, value, resolution):
+        self.write_mapped(value, 0.05, 0.001, 0.00001, resolution)
 
     def write_torque(self, value, resolution):
         self.write_mapped(value, 0.5, 0.01, 0.001, resolution)
@@ -310,6 +336,8 @@ def parse_register(parser, register, resolution):
         return parser.read_current(resolution)
     elif register == Register.ABS_POSITION:
         return parser.read_position(resolution)
+    elif register == Register.TRAJECTORY_COMPLETE:
+        return parser.read_int(resolution)
     elif register == Register.REZERO_STATE:
         return parser.read_int(resolution)
     elif register == Register.VOLTAGE:
@@ -318,6 +346,20 @@ def parse_register(parser, register, resolution):
         return parser.read_temperature(resolution)
     elif register == Register.FAULT:
         return parser.read_int(resolution)
+    elif register == Register.POSITION_KP:
+        return parser.read_torque(resolution)
+    elif register == Register.POSITION_KI:
+        return parser.read_torque(resolution)
+    elif register == Register.POSITION_KD:
+        return parser.read_torque(resolution)
+    elif register == Register.POSITION_FEEDFORWARD:
+        return parser.read_torque(resolution)
+    elif register == Register.POSITION_COMMAND:
+        return parser.read_torque(resolution)
+    else:
+        # We don't know what kind of value this is, so we don't know
+        # the units.
+        return parser.read(resolution)
 
 
 def parse_reply(data):
@@ -415,7 +457,8 @@ class Controller:
                  query_resolution=QueryResolution(),
                  position_resolution=PositionResolution(),
                  current_resolution=CurrentResolution(),
-                 transport=None):
+                 transport=None,
+                 can_prefix=0x0000):
         self.id = id
         self.query_resolution = query_resolution
         self.position_resolution = position_resolution
@@ -423,6 +466,7 @@ class Controller:
         self.transport = transport
         self._parser = make_parser(id)
         self._diagnostic_parser = make_diagnostic_parser(id)
+        self._can_prefix = can_prefix
 
         # Pre-compute our query string.
         self._query_data = self._make_query_data()
@@ -452,7 +496,8 @@ class Controller:
         for i in range(7):
             c1.maybe_write()
 
-        c2 = mp.WriteCombiner(writer, 0x10, int(Register.REZERO_STATE), [
+        c2 = mp.WriteCombiner(writer, 0x10, int(Register.TRAJECTORY_COMPLETE), [
+            qr.trajectory_complete,
             qr.rezero_state,
             qr.voltage,
             qr.temperature,
@@ -460,6 +505,14 @@ class Controller:
         ])
         for i in range(4):
             c2.maybe_write()
+
+        if len(qr._extra):
+            c3 = mp.WriteCombiner(
+                writer, 0x10, int(min(qr._extra.keys())),
+                [qr._extra[y] for y in
+                 sorted(list([int(x) for x in qr._extra.keys()]))])
+            for _ in qr._extra.keys():
+                c3.maybe_write()
 
         return buf.getvalue()
 
@@ -475,6 +528,7 @@ class Controller:
         result.source = source
         result.reply_required = query
         result.parse = self._parser
+        result.can_prefix = self._can_prefix
 
         return result
 
@@ -544,6 +598,8 @@ class Controller:
                       maximum_torque=None,
                       stop_position=None,
                       watchdog_timeout=None,
+                      velocity_limit=None,
+                      accel_limit=None,
                       query=False):
         """Return a moteus.Command structure with data necessary to send a
         position mode command with the given values."""
@@ -560,6 +616,8 @@ class Controller:
             pr.maximum_torque if maximum_torque is not None else mp.IGNORE,
             pr.stop_position if stop_position is not None else mp.IGNORE,
             pr.watchdog_timeout if watchdog_timeout is not None else mp.IGNORE,
+            pr.velocity_limit if velocity_limit is not None else mp.IGNORE,
+            pr.accel_limit if accel_limit is not None else mp.IGNORE,
         ]
 
         data_buf = io.BytesIO()
@@ -588,6 +646,10 @@ class Controller:
             writer.write_position(stop_position, pr.stop_position)
         if combiner.maybe_write():
             writer.write_time(watchdog_timeout, pr.watchdog_timeout)
+        if combiner.maybe_write():
+            writer.write_velocity(velocity_limit, pr.velocity_limit)
+        if combiner.maybe_write():
+            writer.write_accel(accel_limit, pr.accel_limit)
 
         if query:
             data_buf.write(self._query_data)
@@ -644,6 +706,71 @@ class Controller:
     async def set_current(self, *args, **kwargs):
         return self._extract(await self._get_transport().cycle(
             [self.make_current(**kwargs)]))
+
+    def make_stay_within(
+            self,
+            *,
+            lower_bound=None,
+            upper_bound=None,
+            feedforward_torque=None,
+            kp_scale=None,
+            kd_scale=None,
+            maximum_torque=None,
+            stop_position=None,
+            watchdog_timeout=None,
+            query=False):
+        """Return a moteus.Command structure with data necessary to send a
+        within mode command with the given values."""
+
+        result = self._make_command(query=query)
+
+        pr = self.position_resolution
+        resolutions = [
+            pr.position if lower_bound is not None else mp.IGNORE,
+            pr.position if upper_bound is not None else mp.IGNORE,
+            pr.feedforward_torque if feedforward_torque is not None else mp.IGNORE,
+            pr.kp_scale if kp_scale is not None else mp.IGNORE,
+            pr.kd_scale if kd_scale is not None else mp.IGNORE,
+            pr.maximum_torque if maximum_torque is not None else mp.IGNORE,
+            pr.watchdog_timeout if watchdog_timeout is not None else mp.IGNORE,
+        ]
+
+        data_buf = io.BytesIO()
+
+        writer = Writer(data_buf)
+        writer.write_int8(mp.WRITE_INT8 | 0x01)
+        writer.write_int8(int(Register.MODE))
+        writer.write_int8(int(Mode.STAY_WITHIN))
+
+        combiner = mp.WriteCombiner(
+            writer, 0x00, int(Register.COMMAND_WITHIN_LOWER_BOUND),
+            resolutions)
+
+        if combiner.maybe_write():
+            writer.write_position(lower_bound, pr.position)
+        if combiner.maybe_write():
+            writer.write_position(upper_bound, pr.position)
+        if combiner.maybe_write():
+            writer.write_torque(feedforward_torque, pr.feedforward_torque)
+        if combiner.maybe_write():
+            writer.write_pwm(kp_scale, pr.kp_scale)
+        if combiner.maybe_write():
+            writer.write_pwm(kd_scale, pr.kd_scale)
+        if combiner.maybe_write():
+            writer.write_torque(maximum_torque, pr.maximum_torque)
+        if combiner.maybe_write():
+            writer.write_time(watchdog_timeout, pr.watchdog_timeout)
+
+        if query:
+            data_buf.write(self._query_data)
+
+        result.data = data_buf.getvalue()
+
+        return result
+
+    async def set_stay_within(self, *args, **kwargs):
+        return self._extract(await self._get_transport().cycle(
+            [self.make_stay_within(**kwargs)]))
 
     def make_diagnostic_write(self, data):
         result = self._make_command(query=False)
@@ -743,6 +870,13 @@ class Stream:
             pass
 
         self._read_data = b''
+
+        # Now flush anything from the underlying transport if applicable.
+        try:
+            await asyncio.wait_for(self.controller._get_transport().read(), 0.02)
+        except asyncio.TimeoutError:
+            # This is the expected path.
+            pass
 
     async def _read_maybe_empty_line(self):
         while b'\n' not in self._read_data and b'\r' not in self._read_data:

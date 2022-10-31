@@ -1,4 +1,4 @@
-// Copyright 2018-2020 Josh Pieper, jjp@pobox.com.
+// Copyright 2018-2022 Josh Pieper, jjp@pobox.com.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -177,12 +177,25 @@ volatile uint8_t g_measured_hw_pins;
 volatile uint8_t g_measured_hw_rev;
 }
 
-// new
+namespace {
+struct CanConfig {
+  uint32_t prefix = 0;
+
+  template <typename Archive>
+  void Serialize(Archive* a) {
+    a->Visit(MJ_NVP(prefix));
+  }
+
+  bool operator==(const CanConfig& rhs) const {
+    return prefix == rhs.prefix;
+  }
+};
+}
+// TorqueTuner
 
 #define DEVICE_I2CSLAVE 1
 i2c_t mbed_i2c_;
 std::string i2cErrorMessage;
-
 #include "Wire.h"
 
 int main(void) {
@@ -211,6 +224,16 @@ int main(void) {
   }
 #endif
 
+  // I initially used a Ticker here to enqueue events at 1ms
+  // intervals.  However, it introduced jitter into the current
+  // sampling interrupt, and I couldn't figure out how to get the
+  // interrupt priorities right.  Thus for now we just poll to look
+  // for millisecond turnover.
+  MillisecondTimer timer;
+
+  // Wait to ensure the pullups are sufficiently pulled up.
+  timer.wait_us(100);
+
   const uint8_t this_hw_pins =
       0x07 & (~(hwrev0.read() |
                 (hwrev1.read() << 1) |
@@ -234,13 +257,6 @@ int main(void) {
     return false;
   }();
   MJ_ASSERT(compatible);
-
-  // I initially used a Ticker here to enqueue events at 1ms
-  // intervals.  However, it introduced jitter into the current
-  // sampling interrupt, and I couldn't figure out how to get the
-  // interrupt priorities right.  Thus for now we just poll to look
-  // for millisecond turnover.
-  MillisecondTimer timer;
 
   micro::SizedPool<14000> pool;
 
@@ -279,10 +295,12 @@ int main(void) {
 
   micro::AsyncExclusive<micro::AsyncWriteStream> write_stream(serial);
   micro::CommandManager command_manager(&pool, serial, &write_stream);
+  char micro_output_buffer[2048] = {};
   micro::TelemetryManager telemetry_manager(
-      &pool, &command_manager, &write_stream);
+      &pool, &command_manager, &write_stream, micro_output_buffer);
   Stm32Flash flash_interface;
-  micro::PersistentConfig persistent_config(pool, command_manager, flash_interface);
+  micro::PersistentConfig persistent_config(
+      pool, command_manager, flash_interface, micro_output_buffer);
 
   SystemInfo system_info(pool, telemetry_manager);
   FirmwareInfo firmware_info(pool, telemetry_manager,
@@ -326,6 +344,35 @@ int main(void) {
   GitInfo git_info;
   telemetry_manager.Register("git", &git_info);
 
+  CanConfig can_config, old_can_config;
+
+  persistent_config.Register(
+      "can", &can_config,
+      [&can_config, &fdcan, &fdcan_micro_server, &old_can_config]() {
+        // We only update our config if it has actually changed.
+        // Re-initializing the CAN-FD controller can cause packets to
+        // be lost, so don't do it unless actually necessary.
+        if (can_config == old_can_config) {
+          return;
+        }
+        old_can_config = can_config;
+
+        FDCan::Filter filters[1] = {};
+        filters[0].id1 = can_config.prefix << 16;
+        filters[0].id2 = 0x1fff0000u;
+        filters[0].mode = FDCan::FilterMode::kMask;
+        filters[0].action = FDCan::FilterAction::kAccept;
+        filters[0].type = FDCan::FilterType::kExtended;
+        FDCan::FilterConfig filter_config;
+        filter_config.begin = std::begin(filters);
+        filter_config.end = std::end(filters);
+        filter_config.global_std_action = FDCan::FilterAction::kAccept;
+        filter_config.global_ext_action = FDCan::FilterAction::kReject;
+        fdcan.ConfigureFilters(filter_config);
+
+        fdcan_micro_server.SetPrefix(can_config.prefix);
+      });
+
   persistent_config.Load();
 
   moteus_controller.Start();
@@ -350,6 +397,7 @@ int main(void) {
       moteus_controller.PollMillisecond();
       board_debug.PollMillisecond();
       abs_port.PollMillisecond();
+      system_info.SetCanResetCount(fdcan_micro_server.can_reset_count());
 
       old_time = new_time;
     }

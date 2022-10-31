@@ -1,6 +1,4 @@
-# -*- python -*-
-
-# Copyright 2020 Josh Pieper, jjp@pobox.com.
+# Copyright 2022 Josh Pieper, jjp@pobox.com.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,4 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-VERSION = "0.3.39"
+
+# This file exists merely to shut up PySide6's warning about
+# PYSIDE_DESIGNER_PLUGINS
+
+import PySide6
+from PySide6 import QtDesigner
+
+class NoopPlugin(QtDesigner.QDesignerCustomWidgetInterface):
+    def name(self):
+        return 'noop'
+
+QtDesigner.QPyDesignerCustomWidgetCollection.addCustomWidget(NoopPlugin())

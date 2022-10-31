@@ -13,6 +13,7 @@
 #include "Wire.h"
 
 #include "fw/bldc_servo.h"
+#include "fw/bldc_servo_structs.h"
 #include "fw/moteus.h"
 
 #include <stdint.h>
@@ -50,8 +51,8 @@ uint16_t calcsum(uint8_t buf[], int length) {
 void receiveI2C(int how_many) {
   uint8_t k = 0;
   BldcServo::CommandData stop_command;
-  stop_command.mode = BldcServo::kStopped;
-  if(bldcServo && bldcServo->status().mode == BldcServo::kFault){
+  stop_command.mode = BldcServo::Mode::kStopped;
+  if(bldcServo && bldcServo->status().mode == BldcServo::Mode::kFault){
     stop_command.rezero_position = 0.0f;
     bldcServo->Command(stop_command);
   }
@@ -80,7 +81,7 @@ void receiveI2C(int how_many) {
     command.timeout_s = std::numeric_limits<float>::quiet_NaN();
     command.max_torque_Nm = 0.1f; // during debug: 0.1f, default: 100.0f;
     
-    command.mode = BldcServo::kPosition; // kZeroVelocity
+    command.mode = BldcServo::Mode::kPosition; // kZeroVelocity
     
     if (mode_rec == 't'){
       command.position = kNaN; // kNaN means start at the current position.

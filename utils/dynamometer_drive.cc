@@ -92,6 +92,10 @@ struct Options {
   bool validate_power_limit = false;
   bool validate_max_velocity = false;
   bool validate_rezero = false;
+  bool validate_voltage_mode_control = false;
+  bool validate_fixed_voltage_mode = false;
+  bool validate_brake_mode = false;
+  bool validate_velocity_accel_limits = false;
 
   template <typename Archive>
   void Serialize(Archive* a) {
@@ -123,6 +127,10 @@ struct Options {
     a->Visit(MJ_NVP(validate_power_limit));
     a->Visit(MJ_NVP(validate_max_velocity));
     a->Visit(MJ_NVP(validate_rezero));
+    a->Visit(MJ_NVP(validate_voltage_mode_control));
+    a->Visit(MJ_NVP(validate_fixed_voltage_mode));
+    a->Visit(MJ_NVP(validate_brake_mode));
+    a->Visit(MJ_NVP(validate_velocity_accel_limits));
   }
 };
 
@@ -201,7 +209,7 @@ class ServoStatsReader {
     // Here we verify that the final and total timer are always valid.
     if (result.final_timer == 0 ||
         result.total_timer == 0 ||
-        result.final_timer > 2970 ||
+        result.final_timer > 3100 ||
         result.total_timer < 4250) {
       throw mjlib::base::system_error::einval(
           fmt::format("Invalid timer final={} total={}",
@@ -345,6 +353,11 @@ class Controller {
     double max_position_slip = std::numeric_limits<double>::quiet_NaN();
     double max_power_W = 450.0;
     double max_velocity = 500.0;
+
+    bool voltage_mode_control = false;
+
+    bool fixed_voltage_mode = false;
+    double fixed_voltage_control_V = 0.0;
   };
 
   boost::asio::awaitable<void> ConfigurePid(const PidConstants& pid) {
@@ -372,6 +385,15 @@ class Controller {
 
     co_await Command(
         fmt::format("conf set servo.max_velocity {}", pid.max_velocity));
+
+    co_await Command(
+        fmt::format("conf set servo.voltage_mode_control {}", pid.voltage_mode_control ? 1 : 0));
+
+    co_await Command(
+        fmt::format("conf set servo.fixed_voltage_mode {}", pid.fixed_voltage_mode ? 1 : 0));
+
+    co_await Command(
+        fmt::format("conf set servo.fixed_voltage_control_V {}", pid.fixed_voltage_control_V));
 
     co_return;
   }
@@ -613,6 +635,14 @@ class Application {
       co_await ValidateMaxVelocity();
     } else if (options_.validate_rezero) {
       co_await ValidateRezero();
+    } else if (options_.validate_voltage_mode_control) {
+      co_await ValidateVoltageModeControl();
+    } else if (options_.validate_fixed_voltage_mode) {
+      co_await ValidateFixedVoltageMode();
+    } else if (options_.validate_brake_mode) {
+      co_await ValidateBrakeMode();
+    } else if (options_.validate_velocity_accel_limits) {
+      co_await ValidateVelocityAccelLimits();
     } else {
       fmt::print("No cycle selected\n");
     }
@@ -637,8 +667,8 @@ class Application {
 
   boost::asio::awaitable<void> CommandFixtureRigid() {
     Controller::PidConstants pid;
-    pid.ki = 200.0;
-    pid.kd = 0.15;
+    pid.ki = 300.0;
+    pid.kd = 0.35;
     pid.kp = 5.0;
     pid.ilimit = 0.3;
 
@@ -737,7 +767,7 @@ class Application {
   boost::asio::awaitable<PwmResult> RunPwmVoltage(double phase, double voltage) {
     co_await dut_->Command(fmt::format("d pwm {} {}",
                                        WrapZeroToTwoPi(phase), voltage));
-    co_await Sleep(0.3);
+    co_await Sleep(0.5);
 
     PwmResult result;
     result.phase = phase;
@@ -998,19 +1028,7 @@ class Application {
     co_return;
   }
 
-  boost::asio::awaitable<void> ValidatePositionBasic() {
-    co_await dut_->Command("d stop");
-    co_await fixture_->Command("d stop");
-    co_await fixture_->Command("d index 0");
-    co_await dut_->Command("d index 0");
-
-    // Set some constants that should work for basic position control.
-    Controller::PidConstants pid;
-    pid.kp = 1.0;
-    pid.ki = 0.0;
-    pid.kd = 0.05;
-    co_await dut_->ConfigurePid(pid);
-
+  boost::asio::awaitable<void> RunBasicPositionTest(Controller::PidConstants pid) {
     // Move to a few different positions.
     for (const double position : {0.0, -0.2, 0.3}) {
       fmt::print("Moving to position {}\n", position);
@@ -1028,6 +1046,10 @@ class Application {
       }
     }
 
+    co_await RunBasicPositionVelocityTest(pid, 1.0);
+  }
+
+  boost::asio::awaitable<void> RunBasicPositionVelocityTest(Controller::PidConstants pid, double tolerance_scale) {
     // Move at a few different velocities.
     for (const double velocity : {0.0, -1.5, 3.0}) {
       fmt::print("Moving at velocity {}\n", velocity);
@@ -1037,12 +1059,16 @@ class Application {
 
       const double fixture_velocity =
           options_.transducer_scale * fixture_->servo_stats().velocity;
-      if (std::abs(fixture_velocity - velocity) > 0.35) {
+      if (std::abs(fixture_velocity - velocity) > 0.35 * tolerance_scale) {
         throw mjlib::base::system_error::einval(
             fmt::format("Fixture velocity {} != {}",
                         fixture_velocity, velocity));
       }
     }
+
+    co_await dut_->Command("d stop");
+
+    co_await Sleep(0.5);
 
     co_await dut_->Command("d index 0");
     co_await fixture_->Command("d index 0");
@@ -1054,10 +1080,10 @@ class Application {
       co_await dut_->Command(fmt::format("d pos nan {} 0.2 s{}",
                                          kFixedVelocity, stop_position));
 
-      co_await Sleep(0.3);
+      co_await Sleep(0.5);
       const double fixture_velocity =
           options_.transducer_scale * fixture_->servo_stats().velocity;
-      if ((std::abs(fixture_velocity) - kFixedVelocity) > 0.35) {
+      if ((std::abs(fixture_velocity) - kFixedVelocity) > 0.38 * tolerance_scale) {
         throw mjlib::base::system_error::einval(
             fmt::format("Fixture velocity {} != {}",
                         fixture_velocity, kFixedVelocity));
@@ -1067,7 +1093,7 @@ class Application {
       co_await Sleep(2.5);
       const double fixture_position =
           options_.transducer_scale * fixture_->servo_stats().unwrapped_position;
-      if (std::abs(fixture_position - stop_position) > 0.07) {
+      if (std::abs(fixture_position - stop_position) > 0.07 * tolerance_scale) {
         throw mjlib::base::system_error::einval(
             fmt::format("Fixture stop position {} != {}",
                         fixture_position, stop_position));
@@ -1077,13 +1103,16 @@ class Application {
     // Configure with some position limits in place and verify we
     // don't move outside of them by much.
     for (const double position_limit : {0.1, 1.0, 2.0}) {
+      co_await dut_->Command(
+          fmt::format("d pos nan 1.5 {} s0", options_.max_torque_Nm));
+      co_await Sleep(3.0);
+      co_await fixture_->Command("d index 0");
+
       fmt::print("Testing position limit {}\n", position_limit);
       auto pid_limit = pid;
       pid_limit.position_min = -position_limit;
       pid_limit.position_max = 10.0;
       co_await dut_->ConfigurePid(pid_limit);
-      co_await dut_->Command("d index 0");
-      co_await fixture_->Command("d index 0");
 
       co_await dut_->Command(
           fmt::format("d pos nan 1.5 {} s-10",
@@ -1093,14 +1122,13 @@ class Application {
       {
         const double fixture_position =
             options_.transducer_scale * fixture_->servo_stats().unwrapped_position;
-        if (std::abs(fixture_position - (-position_limit)) > 0.07) {
+        if (std::abs(fixture_position - (-position_limit)) > 0.07 * tolerance_scale) {
           throw mjlib::base::system_error::einval(
               fmt::format("Fixture stop position {} != {}",
                           fixture_position, -position_limit));
         }
       }
 
-      co_await dut_->Command("d stop");
       pid_limit.position_min = -10.0;
       pid_limit.position_max = position_limit;
       co_await dut_->ConfigurePid(pid_limit);
@@ -1111,18 +1139,34 @@ class Application {
       {
         const double fixture_position =
             options_.transducer_scale * fixture_->servo_stats().unwrapped_position;
-        if (std::abs(fixture_position - position_limit) > 0.05) {
+        if (std::abs(fixture_position - position_limit) > 0.05 * tolerance_scale) {
           throw mjlib::base::system_error::einval(
               fmt::format("Fixture stop position {} != {}",
                           fixture_position, position_limit));
         }
       }
-
-      co_await dut_->Command("d stop");
     }
+
+    co_await dut_->Command("d stop");
 
     // Get back to our default config.
     co_await dut_->ConfigurePid(pid);
+  }
+
+  boost::asio::awaitable<void> ValidatePositionBasic() {
+    co_await dut_->Command("d stop");
+    co_await fixture_->Command("d stop");
+    co_await fixture_->Command("d index 0");
+    co_await dut_->Command("d index 0");
+
+    // Set some constants that should work for basic position control.
+    Controller::PidConstants pid;
+    pid.kp = 1.0;
+    pid.ki = 0.0;
+    pid.kd = 0.05;
+    co_await dut_->ConfigurePid(pid);
+
+    co_await RunBasicPositionTest(pid);
 
     // Now we'll do the basic tests with the fixture locked rigidly in
     // place.
@@ -1297,16 +1341,16 @@ class Application {
         co_await dut_->Command(
             fmt::format("d pos {} 0 {}", position, options_.max_torque_Nm));
 
-        const double kDelayS = 1.0;
+        const double kDelayS = 2.0;
         co_await Sleep(kDelayS);
 
         const double expected_torque = kDelayS * pid.ki * position;
 
         verify_position_mode();
-        if (std::abs(current_torque_Nm_ - expected_torque) > 0.16) {
+        if (std::abs(current_torque_Nm_ - expected_torque) > 0.24) {
           throw mjlib::base::system_error::einval(
               fmt::format("ki torque not as expected {} != {} (within {})",
-                          current_torque_Nm_, expected_torque, 0.16));
+                          current_torque_Nm_, expected_torque, 0.24));
         }
 
         // Stop the DUT to clear out the I term.
@@ -1332,7 +1376,7 @@ class Application {
     // We purposefully use no I term to see how good we are with just
     // PD.
     Controller::PidConstants pid;
-    pid.kp = 1.0;
+    pid.kp = 2.0;
     pid.kd = 0.05;
     co_await dut_->ConfigurePid(pid);
 
@@ -1387,7 +1431,7 @@ class Application {
           const double estimated_velocity =
               (results[i].position - results[i - 1].position) / kDelayS;
           // TODO: Lower this threshold.
-          if (std::abs(estimated_velocity - speed) > 0.18) {
+          if (std::abs(estimated_velocity - speed) > 0.205) {
             throw mjlib::base::system_error::einval(
                 fmt::format("estimated speed at index {} too far off {} != {}",
                             i, estimated_velocity, speed));
@@ -1590,9 +1634,9 @@ class Application {
       const auto spinning_dut = dut_->servo_stats();
       const auto measured_speed =
           spinning_dut.unwrapped_position - initial_dut.unwrapped_position;
-      if (std::abs(measured_speed - kDesiredSpeed) > 0.05) {
+      if (std::abs(measured_speed - kDesiredSpeed) > 0.052) {
         throw mjlib::base::system_error::einval(
-            fmt::format("Base speed not achieved |{} - {}| > 0.05",
+            fmt::format("Base speed not achieved |{} - {}| > 0.052",
                         measured_speed, kDesiredSpeed));
       }
 
@@ -1617,9 +1661,9 @@ class Application {
       const auto slow_speed =
           (slow_dut.unwrapped_position -
            spinning_dut.unwrapped_position) / 2.0;
-      if (std::abs(slow_speed - 0.5 * kDesiredSpeed) > 0.05) {
+      if (std::abs(slow_speed - 0.5 * kDesiredSpeed) > 0.052) {
         throw mjlib::base::system_error::einval(
-            fmt::format("DUT did not slow down |{} - {}| > 0.05",
+            fmt::format("DUT did not slow down |{} - {}| > 0.052",
                         slow_speed, 0.5 * kDesiredSpeed));
       }
 
@@ -1859,7 +1903,7 @@ class Application {
       { 100.0, 4.04 },
       { 20.0, 3.0 },
       { 10.0, 2.09 },
-      { 5.0, 1.45 },
+      { 5.0, 1.3 },
     };
 
     for (const auto test : tests) {
@@ -1903,6 +1947,8 @@ class Application {
 
     Controller::PidConstants pid;
 
+    const double kQCurrent = 1.5;
+
     // First, make sure it works in current mode.
     for (double velocity : { 1.0, 3.0, 7.0, 10.0 }) {
       for (double direction : { -1.0, 1.0 }) {
@@ -1911,7 +1957,8 @@ class Application {
           co_await dut_->ConfigurePid(pid);
 
           if (current_mode) {
-            co_await dut_->Command(fmt::format("d dq 0.0 {}", direction));
+            co_await dut_->Command(
+                fmt::format("d dq 0.0 {}", kQCurrent * direction));
           } else {
             co_await dut_->Command(
                 fmt::format("d pos nan {} 1.0", 25 * direction));
@@ -1959,6 +2006,7 @@ class Application {
       }
     }
   }
+
   boost::asio::awaitable<void> ValidateRezero() {
     co_await fixture_->Command("d stop");
     co_await dut_->Command("d stop");
@@ -1970,6 +2018,197 @@ class Application {
     co_await DoRezeroTest(-32767.0);
     co_await DoRezeroTest(32763.0);
     co_await DoRezeroTest(32767.0);
+
+    co_return;
+  }
+
+  boost::asio::awaitable<void> ValidateVoltageModeControl() {
+    co_await dut_->Command("d stop");
+    co_await fixture_->Command("d stop");
+    co_await fixture_->Command("d index 0");
+    co_await dut_->Command("d index 0");
+
+    Controller::PidConstants pid;
+    pid.voltage_mode_control = true;
+    pid.kp = 1.0;
+    pid.ki = 0.0;
+    pid.kd = 0.01;
+
+    co_await dut_->ConfigurePid(pid);
+
+    // With voltage mode control turned on, basic operation should
+    // work as before modulo different position PID values.
+    co_await RunBasicPositionTest(pid);
+
+    co_return;
+  }
+
+  boost::asio::awaitable<void> ValidateFixedVoltageMode() {
+    co_await dut_->Command("d stop");
+    co_await fixture_->Command("d stop");
+    co_await dut_->Command("d index 0");
+
+    Controller::PidConstants pid;
+    pid.voltage_mode_control = true;
+    pid.kp = 1.0;
+    pid.ki = 0.0;
+    pid.kd = 0.01;
+    pid.fixed_voltage_mode = true;
+    pid.fixed_voltage_control_V = 0.45;
+
+    co_await dut_->ConfigurePid(pid);
+
+    // In this mode, the DUT ignores the encoder, so when we turn it
+    // on to begin with, it will center on a random position.  So turn
+    // it on first, then zero the fixture.
+    co_await dut_->Command("d pos 0 0 0.2");
+    co_await Sleep(0.5);
+    co_await fixture_->Command("d index 0");
+
+    // Despite burning power, all the basic position mode things that
+    // don't involve jumps should work as is with fixed voltage mode.
+    co_await RunBasicPositionVelocityTest(pid, 2.3);
+
+    // However, we can use the fixture to drive the motor to the next
+    // electrical phase and then it will stay there.
+
+    co_return;
+  }
+
+  boost::asio::awaitable<void> ValidateBrakeMode() {
+    co_await dut_->Command("d stop");
+    co_await fixture_->Command("d stop");
+    co_await fixture_->Command("d index 0");
+
+    co_await dut_->Command("d brake");
+    co_await CommandFixtureRigid();
+
+    struct BrakeTest {
+      double velocity;
+      double expected_torque;
+    } brake_tests[] = {
+      // These torques were just experimentally determined on the dyno
+      // fixture's MiToot motor.
+      { 0.0, 0.0 },
+      { 2.0, 0.1 },
+      { 5.0, 0.28 },
+      { -2.0, -0.1 },
+      { -5.0, -0.28 },
+    };
+
+    for (const auto& test : brake_tests) {
+      co_await fixture_->Command(
+          fmt::format("d pos nan {} {}",
+                      test.velocity,
+                      options_.max_torque_Nm));
+      co_await Sleep(1.0);
+
+      if (std::abs(current_torque_Nm_ - test.expected_torque) > 0.06) {
+        throw mjlib::base::system_error::einval(
+            fmt::format("brake torque not as expected {} != {} (within {})",
+                        current_torque_Nm_, test.expected_torque, 0.06));
+      }
+    }
+
+    co_await dut_->Command("d stop");
+    co_await fixture_->Command("d stop");
+
+    co_return;
+  }
+
+  boost::asio::awaitable<void> ValidateVelocityAccelLimits() {
+    co_await fixture_->Command("d stop");
+    co_await fixture_->Command("d index 0");
+
+    co_await dut_->Command("d stop");
+    co_await dut_->Command("d index 0");
+
+    Controller::PidConstants pid;
+    pid.kp = 2.0;
+    pid.kd = 0.1;
+    co_await dut_->ConfigurePid(pid);
+
+    // We use a trajectory with a non-zero final velocity since we
+    // have out of band knowledge that this results in the worst
+    // possible loop timing.
+    co_await dut_->Command(
+        fmt::format("d pos 3.0 -0.5 {} v0.5 a0.2", options_.max_torque_Nm));
+
+    const double step_s = 0.1;
+    const int loops = 14 / step_s;
+    double done_time = 0.0;
+    std::map<double, double> fixture_position_history;
+    std::map<double, double> fixture_velocity_history;
+
+    for (int i = 0; i < loops; i++) {
+      const double time_s = i * step_s;
+      co_await Sleep(step_s);
+
+      const double fixture_position =
+          options_.transducer_scale *
+          fixture_->servo_stats().unwrapped_position;
+      const double fixture_velocity =
+          options_.transducer_scale *
+          fixture_->servo_stats().velocity;
+
+      fixture_position_history.insert(
+          std::make_pair(time_s, fixture_position));
+      fixture_velocity_history.insert(
+          std::make_pair(time_s, fixture_velocity));
+
+      if (std::abs(fixture_position - 3.0) < 0.2 &&
+          done_time == 0.0) {
+        done_time = time_s;
+      }
+
+      const double kVelocityWindow = 0.5;
+      if (time_s < kVelocityWindow) {
+        continue;
+      }
+
+      const double old_position = fixture_position_history.lower_bound(
+          time_s - kVelocityWindow)->second;
+      const double average_velocity =
+          (fixture_position - old_position) / kVelocityWindow;
+
+      if (time_s > 12) {
+        // We should be in the final parts of the trajectory moving at
+        // -0.5 units per second.
+        if (std::abs(average_velocity + 0.5) > 0.35) {
+          throw mjlib::base::system_error::einval(
+              fmt::format("Not stopped at end {} != 0",
+                          average_velocity));
+        }
+      } else {
+        // We are in-motion.
+        if (std::abs(average_velocity) > 0.60) {
+          throw mjlib::base::system_error::einval(
+              fmt::format("Velocity while moving exceeded limit |{}| > 0.60",
+                          fixture_velocity));
+        }
+        const double kAccelWindow = 1.0;
+        if (i * step_s > kAccelWindow) {
+          const double old_vel =
+              fixture_velocity_history.lower_bound(
+                  i * step_s - kAccelWindow)->second;
+          const double measured_accel =
+              (fixture_velocity - old_vel) / kAccelWindow;
+          if (std::abs(measured_accel) > 0.60) {
+            throw mjlib::base::system_error::einval(
+                fmt::format("Measured acceleration exceeds limit |{}| > 0.60",
+                            measured_accel));
+          }
+        }
+      }
+    }
+
+    if (std::abs(done_time - 7.2) > 1.0) {
+      throw mjlib::base::system_error::einval(
+          fmt::format("Took wrong amount of time {} != 7.2", done_time));
+    }
+
+    co_await dut_->Command("d stop");
+    co_await fixture_->Command("d stop");
 
     co_return;
   }
@@ -2021,6 +2260,10 @@ class Application {
     while (torque_tare_count_ < kNumTareSamples) {
       co_await Sleep(0.5);
     }
+
+    // Ensure that both devices start with a known configuration.
+    co_await dut_->ConfigurePid(Controller::PidConstants());
+    co_await fixture_->ConfigurePid(Controller::PidConstants());
 
     fmt::print("Initialization complete\n");
 

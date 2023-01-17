@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -B
 
-# Copyright 2015-2020 Josh Pieper, jjp@pobox.com.  All rights reserved.
+# Copyright 2015-2022 Josh Pieper, jjp@pobox.com.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,15 +32,24 @@ import traceback
 import matplotlib
 import matplotlib.figure
 
-import PySide2
+try:
+    import PySide6
+    from PySide6 import QtGui
 
-os.environ['QT_API'] = 'pyside2'
+    os.environ['PYSIDE_DESIGNER_PLUGINS'] = os.path.dirname(os.path.abspath(__file__))
+    os.environ['QT_API'] = 'PySide6'
+    from PySide6 import QtUiTools
+except ImportError:
+    import PySide2
+    from PySide2 import QtGui
+    os.environ['QT_API'] = 'pyside2'
+    from PySide2 import QtUiTools
+
 
 from matplotlib.backends import backend_qt5agg
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 qt_backend = matplotlib.backends.backend_qt5agg
 
-from PySide2 import QtUiTools
 
 import qtconsole
 from qtconsole.history_console_widget import HistoryConsoleWidget
@@ -49,6 +58,11 @@ if getattr(qtconsole, "qt", None):
     QtWidgets = QtGui
 else:
     from qtpy import QtCore, QtGui, QtWidgets
+
+# Why this is necessary and not just the default, I don't know, but
+# otherwise we get a warning about "Qt WebEngine seems to be
+# initialized from a plugin..."
+QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)
 
 import asyncqt
 
@@ -63,6 +77,16 @@ MAX_HISTORY_SIZE = 100
 MAX_SEND = 61
 POLL_TIMEOUT_S = 0.1
 STARTUP_TIMEOUT_S = 0.5
+
+FORMAT_ROLE = QtCore.Qt.UserRole + 1
+
+FMT_STANDARD = 0
+FMT_HEX = 1
+
+
+class CommandError(RuntimeError):
+    def __init__(self, cmd, err):
+        super(CommandError, self).__init__(f'CommandError: "{cmd}" => "{err}"')
 
 
 def _has_nonascii(data):
@@ -80,26 +104,53 @@ def _get_data(value, name):
     return value
 
 
-def _set_tree_widget_data(item, struct,
-                          getter=lambda x, y: getattr(x, y),
-                          required_size=0):
-    if item.childCount() < required_size:
-        for i in range(item.childCount(), required_size):
-            subitem = QtWidgets.QTreeWidgetItem(item)
-            subitem.setText(0, str(i))
-    for i in range(item.childCount()):
-        child = item.child(i)
-        name = child.text(0)
+def _add_schema_item(parent, element, terminal_flags=None):
+    # Cache our schema, so that we can use it for things like
+    # generating better input options.
+    parent.setData(1, QtCore.Qt.UserRole, element)
 
-        field = getter(struct, name)
-        if isinstance(field, tuple) and child.childCount() > 0:
-            _set_tree_widget_data(child, field)
-        elif isinstance(field, list):
-            _set_tree_widget_data(child, field,
-                                  getter=lambda x, y: x[int(y)],
-                                  required_size=len(field))
+    if isinstance(element, reader.ObjectType):
+        for field in element.fields:
+            name = field.name
+
+            item = QtWidgets.QTreeWidgetItem(parent)
+            item.setText(0, name)
+
+            _add_schema_item(item, field.type_class,
+                             terminal_flags=terminal_flags)
+    else:
+        if terminal_flags:
+            parent.setFlags(terminal_flags)
+
+def _set_tree_widget_data(item, struct, element, terminal_flags=None):
+    if (isinstance(element, reader.ObjectType) or
+        isinstance(element, reader.ArrayType) or
+        isinstance(element, reader.FixedArrayType)):
+        if not isinstance(element, reader.ObjectType):
+            for i in range(item.childCount(), len(struct)):
+                subitem = QtWidgets.QTreeWidgetItem(item)
+                subitem.setText(0, str(i))
+                _add_schema_item(subitem, element.type_class,
+                                 terminal_flags=terminal_flags)
+        for i in range(item.childCount()):
+            child = item.child(i)
+            if isinstance(struct, list):
+                field = struct[i]
+                child_element = element.type_class
+            else:
+                name = child.text(0)
+                field = getattr(struct, name)
+                child_element = element.fields[i].type_class
+            _set_tree_widget_data(child, field, child_element,
+                                  terminal_flags=terminal_flags)
+    else:
+        maybe_format = item.data(1, FORMAT_ROLE)
+        text = None
+        if maybe_format == FMT_HEX and type(struct) == int:
+            text = f"{struct:x}"
         else:
-            child.setText(1, repr(field))
+            text = repr(struct)
+        item.setText(1, text)
 
 
 def _console_escape(value):
@@ -204,8 +255,8 @@ class PlotItem(object):
 class PlotWidget(QtWidgets.QWidget):
     COLORS = 'rbgcmyk'
 
-    def __init__(self, parent=None):
-        QtWidgets.QWidget.__init__(self, parent)
+    def __init__(self, *args, **kwargs):
+        QtWidgets.QWidget.__init__(self, *args, **kwargs)
 
         self.history_s = 20.0
         self.next_color = 0
@@ -215,6 +266,7 @@ class PlotWidget(QtWidgets.QWidget):
 
         self.figure = matplotlib.figure.Figure()
         self.canvas = FigureCanvas(self.figure)
+        self.canvas.setMinimumSize(10, 10)
 
         self.canvas.mpl_connect('key_press_event', self.handle_key_press)
         self.canvas.mpl_connect('key_release_event', self.handle_key_release)
@@ -376,6 +428,41 @@ class NoEditDelegate(QtWidgets.QStyledItemDelegate):
         return None
 
 
+class EditDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, parent=None):
+        QtWidgets.QStyledItemDelegate.__init__(self, parent=parent)
+
+    def createEditor(self, parent, option, index):
+        maybe_schema = index.data(QtCore.Qt.UserRole)
+
+        if (maybe_schema is not None and
+            (isinstance(maybe_schema, reader.EnumType) or
+             isinstance(maybe_schema, reader.BooleanType))):
+            editor = QtWidgets.QComboBox(parent)
+
+            if isinstance(maybe_schema, reader.EnumType):
+                options = list(maybe_schema.enum_class)
+                options_text = [repr(x) for x in options]
+                editor.setEditable(True)
+                editor.lineEdit().editingFinished.connect(self.commitAndCloseEditor)
+            elif isinstance(maybe_schema, reader.BooleanType):
+                options_text = ['False', 'True']
+                editor.activated.connect(self.commitAndCloseEditor)
+
+            editor.insertItems(0, options_text)
+
+            return editor
+        else:
+            return super(EditDelegate, self).createEditor(parent, option, index)
+
+
+    def commitAndCloseEditor(self):
+        editor = self.sender()
+
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor)
+
+
 def _get_item_name(item):
     name = item.text(0)
     while item.parent() and item.parent().parent():
@@ -500,12 +587,12 @@ class Device:
     STATE_DATA = 4
 
     def __init__(self, number, transport, console, prefix,
-                 config_tree_item, data_tree_item):
+                 config_tree_item, data_tree_item, can_prefix=None):
         self.error_count = 0
         self.poll_count = 0
 
         self.number = number
-        self.controller = moteus.Controller(number)
+        self.controller = moteus.Controller(number, can_prefix=can_prefix)
         self._transport = transport
         self._stream = DeviceStream(transport, self.controller)
 
@@ -544,6 +631,17 @@ class Device:
             self._config_tree_item.takeChildren()
             self._config_tree_items = {}
 
+            # Try doing it the "new" way first.
+            try:
+                await self.schema_update_config()
+                self._schema_config = True
+                return
+            except CommandError:
+                # This means the controller we're working with doesn't
+                # support the schema based config.
+                self._schema_config = False
+                pass
+
             configs = await self.command('conf enumerate')
             for config in configs.split('\n'):
                 if config.strip() == '':
@@ -551,6 +649,30 @@ class Device:
                 self.add_config_line(config)
         finally:
             self._updating_config = False
+
+    async def schema_update_config(self):
+        elements = [x.strip() for x in
+                    (await self.command('conf list')).split('\n')
+                    if x.strip() != '']
+        for element in elements:
+            self.write_line(f'conf schema {element}\r\n')
+            schema = await self.read_schema(element)
+            self.write_line(f'conf data {element}\r\n')
+            data = await self.read_data(element)
+
+            archive = reader.Type.from_binary(io.BytesIO(schema), name=element)
+            item = QtWidgets.QTreeWidgetItem(self._config_tree_item)
+            item.setText(0, element)
+            flags = QtCore.Qt.ItemFlags(
+                int(QtCore.Qt.ItemIsEditable) |
+                int(QtCore.Qt.ItemIsSelectable) |
+                int(QtCore.Qt.ItemIsEnabled))
+
+            _add_schema_item(item, archive, terminal_flags=flags)
+            self._config_tree_items[element] = item
+            struct = archive.read(reader.Stream(io.BytesIO(data)))
+            _set_tree_widget_data(item, struct, archive, terminal_flags=flags)
+
 
     async def update_telemetry(self):
         self._data_tree_item.takeChildren()
@@ -594,11 +716,34 @@ class Device:
     async def read_schema(self, name):
         while True:
             line = await self.readline()
-            if not line == f'schema {name}':
+            if line.startswith('ERR'):
+                raise CommandError('', line)
+            if not (line == f'schema {name}' or line == f'schema {name}'):
                 continue
             break
         schema = await self.read_sized_block()
         return schema
+
+    async def read_schema(self, name):
+        while True:
+            line = await self.readline()
+            if line.startswith('ERR'):
+                raise CommandError('', line)
+            if not (line == f'schema {name}' or line == f'cschema {name}'):
+                continue
+            break
+        schema = await self.read_sized_block()
+        return schema
+
+    async def read_data(self, name):
+        while True:
+            line = await self.readline()
+            if not line == f'cdata {name}':
+                continue
+            if line.startswith('ERR'):
+                raise CommandError('', line)
+            break
+        return await self.read_sized_block()
 
     async def do_data(self, name):
         data = await self.read_sized_block()
@@ -612,7 +757,7 @@ class Device:
         if record:
             struct = record.archive.read(reader.Stream(io.BytesIO(data)))
             record.update(struct)
-            _set_tree_widget_data(record.tree_item, struct)
+            _set_tree_widget_data(record.tree_item, struct, record.archive)
 
     async def read_sized_block(self):
         return await self._stream.read_sized_block()
@@ -631,9 +776,14 @@ class Device:
     def write(self, data):
         self._stream.write(data)
 
-    def config_item_changed(self, name, value):
+    def config_item_changed(self, name, value, schema):
         if self._updating_config:
             return
+        if isinstance(schema, reader.EnumType) and ':' in value:
+            int_val = value.rsplit(':', 1)[-1].strip(' >')
+            value = int_val
+        if isinstance(schema, reader.BooleanType) and value.lower() in ['true', 'false']:
+            value = 1 if (value.lower() == 'true') else 0
         self.write_line('conf set %s %s\r\n' % (name, value))
 
     async def readline(self):
@@ -656,6 +806,8 @@ class Device:
 
         now = time.time()
         while True:
+            if line.startswith('ERR'):
+                raise CommandError(message, line)
             if line.startswith('OK'):
                 return result.getvalue()
 
@@ -734,17 +886,7 @@ class Device:
         schema = Device.Schema(name, self, record)
         item.setData(0, QtCore.Qt.UserRole, schema)
 
-        def add_item(parent, element):
-            if isinstance(element, reader.ObjectType):
-                for field in element.fields:
-                    name = field.name
-
-                    item = QtWidgets.QTreeWidgetItem(parent)
-                    item.setText(0, name)
-
-                    add_item(item, field.type_class)
-
-        add_item(item, schema_data)
+        _add_schema_item(item, schema_data)
         return item
 
 
@@ -781,6 +923,9 @@ class TviewMainWindow():
 
         self.ui.configTreeWidget.setItemDelegateForColumn(
             0, NoEditDelegate(self.ui))
+        self.ui.configTreeWidget.setItemDelegateForColumn(
+            1, EditDelegate(self.ui))
+
         self.ui.configTreeWidget.itemExpanded.connect(
             self._handle_config_expanded)
         self.ui.configTreeWidget.itemChanged.connect(
@@ -837,7 +982,8 @@ class TviewMainWindow():
             device = Device(device_id, self.transport,
                             self.console, '{}>'.format(device_id),
                             config_item,
-                            data_item)
+                            data_item,
+                            self.options.can_prefix)
 
             config_item.setData(0, QtCore.Qt.UserRole, device)
             asyncio.create_task(device.start())
@@ -981,6 +1127,10 @@ class TviewMainWindow():
         copy_name = menu.addAction('Copy Name')
         copy_value = menu.addAction('Copy Value')
 
+        menu.addSeparator()
+        fmt_standard_action = menu.addAction('Standard Format')
+        fmt_hex_action = menu.addAction('Hex Format')
+
         requested = menu.exec_(self.ui.telemetryTreeWidget.mapToGlobal(pos))
 
         if requested in plot_actions:
@@ -1014,6 +1164,10 @@ class TviewMainWindow():
             QtWidgets.QApplication.clipboard().setText(item.text(0))
         elif requested == copy_value:
             QtWidgets.QApplication.clipboard().setText(item.text(1))
+        elif requested == fmt_standard_action:
+            item.setData(1, FORMAT_ROLE, FMT_STANDARD)
+        elif requested == fmt_hex_action:
+            item.setData(1, FORMAT_ROLE, FMT_HEX)
         else:
             # The user cancelled.
             pass
@@ -1030,7 +1184,8 @@ class TviewMainWindow():
             top = top.parent()
 
         device = top.data(0, QtCore.Qt.UserRole)
-        device.config_item_changed(_get_item_name(item), item.text(1))
+        device.config_item_changed(_get_item_name(item), item.text(1),
+                                   item.data(1, QtCore.Qt.UserRole))
 
     def _handle_plot_item_remove(self):
         index = self.ui.plotItemCombo.currentIndex()
@@ -1049,6 +1204,7 @@ def main():
     # These two commands are aliases.
     parser.add_argument('-d', '--devices', '-t', '--target',
                         action='append', type=str, default=[])
+    parser.add_argument('--can-prefix', type=int, default=0)
 
     parser.add_argument('--max-receive-bytes', default=48, type=int)
 

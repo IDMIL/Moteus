@@ -1,4 +1,4 @@
-// Copyright 2014-2020 Josh Pieper, jjp@pobox.com.
+// Copyright 2014-2022 Josh Pieper, jjp@pobox.com.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,3 +14,7 @@
 
 #define BOOST_TEST_MODULE moteus
 #include <boost/test/unit_test.hpp>
+
+namespace moteus {
+volatile uint8_t g_measured_hw_rev = 7;
+}

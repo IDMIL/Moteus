@@ -7,5 +7,6 @@
 *.FCStd?
 fw/BUILD/
 fw/.mbedignore
-
+.vscode/
+*.log
 /bazel-*
